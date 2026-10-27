@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Temi · Pi · 앱 시뮬레이터</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#dde1e6; --ink:#1d232b; --mute:#6b7480; --acc:#2463eb; --bad:#d23c3c; --ok:#1f8a4c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 12px 0 0; }
+  main { display:grid; grid-template-columns:repeat(auto-fit, minmax(330px, 1fr)); gap:12px; padding:12px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  h2 { font-size:15px; margin:0 0 8px; display:flex; justify-content:space-between; align-items:center; }
+  h3 { font-size:13px; color:var(--mute); margin:12px 0 6px; font-weight:600; }
+  .dot { font-size:12px; font-weight:500; padding:2px 8px; border-radius:99px; background:#eee; color:var(--mute); }
+  .dot.on { background:#e3f5ea; color:var(--ok); }
+  button { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button.danger { color:var(--bad); }
+  button:disabled { opacity:.45; cursor:default; }
+  input, select { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; min-width:0; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:4px 0; }
+  .screen { background:#10151c; color:#e9eef5; border-radius:8px; padding:14px; min-height:96px; }
+  .screen .tag { font-size:12px; color:#8fa3b8; }
+  .screen .say { font-size:17px; margin-top:6px; }
+  .box { border:1px dashed var(--line); border-radius:6px; padding:8px; margin:6px 0; }
+  .req { border:1px solid var(--line); border-radius:6px; padding:8px; margin:6px 0; }
+  .req.urgent { border-color:var(--bad); }
+  .req small { color:var(--mute); }
+  #log { grid-column:1 / -1; }
+  #log pre { margin:0; max-height:280px; overflow:auto; font:12px/1.4 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
+  .hidden { display:none; }
+  label { color:var(--mute); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Temi · Pi · 앱 시뮬레이터</h1>
+  <label>Temi 토큰 <input id="temiToken" value="dev-temi-token" size="14"></label>
+  <label>Pi 토큰 <input id="piToken" value="dev-pi-token" size="14"></label>
+  <button type="button" class="primary" id="connectBtn">기기 연결</button>
+  <label><input type="checkbox" id="tts"> Temi 발화를 소리로 읽기</label>
+  <label><input type="checkbox" id="autoSayDone" checked> 말이 끝나면 say_done 자동 전송</label>
+  <label><input type="checkbox" id="autoReady" checked> Pi trial.ready 자동 전송</label>
+</header>
+<main>
+  <section>
+    <h2>Temi <span class="dot" id="temiDot">연결 안 됨</span></h2>
+    <div class="screen"><div class="tag" id="temiScreen">screen: idle</div><div class="say" id="temiSay">-</div></div>
+    <div class="box hidden" id="askBox">
+      <b id="askText"></b>
+      <div class="row"><input id="askInput" placeholder="대답" style="flex:1"><button type="button" class="primary" id="askSend">대답</button></div>
+      <div class="row">
+        <button type="button" data-ask="무릎이 조금 아파요">무릎이 조금 아파요</button>
+        <button type="button" data-ask="일어설 수가 없어">일어설 수가 없어</button>
+      </div>
+    </div>
+    <div class="box hidden" id="callBox">
+      <b id="callText"></b>
+      <div class="row"><button type="button" class="primary" data-call="true">받음</button><button type="button" class="danger" data-call="false">안 받음</button></div>
+    </div>
+    <div class="box hidden" id="memoryBox">
+      <b>그림카드 게임 진행 중 (game_id <span id="memoryId"></span>)</b>
+      <div class="row"><button type="button" id="memoryDone">게임 결과 보내기</button></div>
+    </div>
+    <h3>참가자 발화 (speech.heard)</h3>
+    <div class="row"><input id="speech" placeholder="말한 내용" style="flex:1"><button type="button" id="speechSend">보내기</button></div>
+    <div class="row">
+      <button type="button" data-say="아무 동물이나 돼요?">아무 동물이나 돼요?</button>
+      <button type="button" data-say="다리가 아파서 못 걷겠어">다리가 아파</button>
+      <button type="button" data-say="오늘은 하기 싫어">오늘은 하기 싫어</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>라즈베리파이 <span class="dot" id="piDot">연결 안 됨</span></h2>
+    <h3>RFID</h3>
+    <div class="row"><button type="button" data-rfid="RFID-A-0001">A 카드</button><button type="button" data-rfid="RFID-B-0002">B 카드</button><button type="button" data-rfid="UNKNOWN">미등록 카드</button></div>
+    <h3>보행 측정</h3>
+    <div id="trialInfo" class="box">대기 중. trial.start를 받으면 여기에 표시됩니다.</div>
+    <div class="row"><button type="button" id="readyBtn">사람이 시작선에 섬 (trial.ready)</button><button type="button" data-trial="early">신호 전에 출발</button></div>
+    <div class="row">
+      <label>속도 m/s <input id="speed" type="number" step="0.01" value="1.25" style="width:80px"></label>
+      <label>단어 수 <input id="words" type="number" value="8" style="width:60px"></label>
+    </div>
+    <div class="row">
+      <button type="button" class="primary" data-trial="ok">정상 완료</button>
+      <button type="button" data-trial="stopped">중간에 멈춤</button>
+      <button type="button" data-trial="out">화면 밖</button>
+      <button type="button" data-trial="two">2명</button>
+      <button type="button" data-trial="silent">말 안 함</button>
+    </div>
+    <div class="row"><label>속도 프리셋:</label>
+      <button type="button" data-speed="1.25">1.25 (그냥)</button>
+      <button type="button" data-speed="1.10">1.10 (평소 이중과제)</button>
+      <button type="button" data-speed="0.88">0.88 (크게 느려짐)</button>
+    </div>
+    <h3>LED 버튼 패드 게임</h3>
+    <div id="gameInfo" class="box">대기 중</div>
+    <div class="row"><button type="button" id="gameDone">게임 결과 보내기</button></div>
+    <h3>안전</h3>
+    <div class="row"><button type="button" class="danger" id="fall">주저앉음 감지 (safety.alert)</button></div>
+  </section>
+
+  <section>
+    <h2>보호자 · 요양사 앱 <span class="dot" id="appDot">로그인 안 됨</span></h2>
+    <div class="row">
+      <select id="appUser"><option>guardian_b</option><option>guardian_a</option><option>staff1</option><option>staff2</option></select>
+      <input id="appPw" value="temi1234" size="9">
+      <button type="button" class="primary" id="loginBtn">로그인</button>
+    </div>
+    <h3>대기 중인 요청</h3>
+    <div id="requests"><small>로그인하면 표시됩니다.</small></div>
+    <h3>테스트용</h3>
+    <div class="row"><button type="button" id="startB">B 검사 바로 시작 (RFID 없이)</button></div>
+  </section>
+
+  <section id="log"><h2>메시지 로그 <button type="button" id="clearLog">지우기</button></h2><pre id="logPre"></pre></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const wsBase = location.origin.replace(/^http/, "ws");
+const sockets = {};
+let currentTrial = null, currentGame = null, pendingAsk = null, pendingCall = null, appToken = null, appWs = null;
+
+function log(dir, who, msg) {
+  const line = `${new Date().toLocaleTimeString()} ${dir} ${who} ${msg.type} ${JSON.stringify(msg.payload ?? {})}\n`;
+  $("logPre").textContent = line + $("logPre").textContent;
+}
+function envelope(type, payload, extra = {}) {
+  return { type, id: crypto.randomUUID().replaceAll("-", ""), ts: new Date().toISOString(), payload, ...extra };
+}
+function send(device, type, payload, extra) {
+  const ws = sockets[device];
+  if (!ws || ws.readyState !== 1) { alert(`${device} 연결 안 됨`); return; }
+  const msg = envelope(type, payload, extra);
+  ws.send(JSON.stringify(msg));
+  log("→", device, msg);
+}
+function connect(device, token, dot, onMessage) {
+  sockets[device]?.close();
+  const ws = new WebSocket(`${wsBase}/ws/device?token=${encodeURIComponent(token)}`);
+  sockets[device] = ws;
+  ws.onopen = () => { dot.textContent = "연결됨"; dot.classList.add("on"); };
+  ws.onclose = () => { if (sockets[device] === ws) { dot.textContent = "연결 끊김"; dot.classList.remove("on"); } };
+  ws.onmessage = (e) => { const msg = JSON.parse(e.data); log("←", device, msg); onMessage(msg); };
+  const ping = setInterval(() => ws.readyState === 1 ? ws.send(JSON.stringify(envelope("ping", {}))) : clearInterval(ping), 25000);
+}
+
+let speakQueue = Promise.resolve();
+function speak(text) {
+  if ($("tts").checked) {
+    return new Promise((resolve) => {
+      const u = Object.assign(new SpeechSynthesisUtterance(text), { lang: "ko-KR" });
+      u.onend = resolve; u.onerror = resolve;
+      speechSynthesis.speak(u);
+    });
+  }
+  return new Promise((resolve) => setTimeout(resolve, Math.max(400, text.length * 40)));
+}
+
+function onTemi(msg) {
+  const p = msg.payload;
+  switch (msg.type) {
+    case "temi.say":
+      speakQueue = speakQueue.then(async () => {
+        $("temiSay").textContent = p.text;
+        await speak(p.text);
+        if ($("autoSayDone").checked) send("temi", "temi.say_done", {}, { reply_to: msg.id });
+      });
+      break;
+    case "temi.ask":
+      pendingAsk = msg.id; $("temiSay").textContent = p.text; $("askText").textContent = p.text; $("askBox").classList.remove("hidden");
+      if ($("tts").checked) speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(p.text), { lang: "ko-KR" }));
+      break;
+    case "temi.show":
+      $("temiScreen").textContent = `screen: ${p.screen}${p.condition ? " / " + p.condition + " #" + p.attempt : ""}${p.game_type ? " / " + p.game_type : ""}`;
+      if (p.screen === "game" && p.game_type === "memory") { currentGame = p.game_id; $("memoryId").textContent = p.game_id; $("memoryBox").classList.remove("hidden"); }
+      if (p.screen === "idle") { $("askBox").classList.add("hidden"); $("memoryBox").classList.add("hidden"); }
+      break;
+    case "temi.goto":
+      setTimeout(() => send("temi", "temi.arrived", { location: p.location }, { reply_to: msg.id }), 2000);
+      break;
+    case "temi.video_call":
+      pendingCall = { id: msg.id, staff_id: p.staff_id };
+      $("callText").textContent = `영상통화 거는 중: ${p.name} (id ${p.staff_id})`; $("callBox").classList.remove("hidden");
+      break;
+  }
+}
+function onPi(msg) {
+  const p = msg.payload;
+  if (msg.type === "trial.start") {
+    currentTrial = p;
+    $("trialInfo").textContent = `준비: trial ${p.trial_id} · ${p.condition} · ${p.attempt}번째 · 출발 신호 대기`;
+    if ($("autoReady").checked) setTimeout(() => send("pi", "trial.ready", { trial_id: p.trial_id }), 300);
+    $("speed").value = p.condition === "single" ? "1.25" : "1.10";
+    $("words").value = p.condition === "single" ? "" : "8";
+  } else if (msg.type === "trial.go") {
+    $("trialInfo").textContent = `출발! 측정 중: trial ${p.trial_id} · ${currentTrial?.condition}`;
+  } else if (msg.type === "trial.abort") {
+    $("trialInfo").textContent = `중단됨: trial ${p.trial_id} (${p.reason})`; currentTrial = null;
+  } else if (msg.type === "game.start") {
+    currentGame = p.game_id; $("gameInfo").textContent = `진행 중: game ${p.game_id} · ${p.game_type}`;
+  } else if (msg.type === "game.abort") {
+    $("gameInfo").textContent = "중단됨"; currentGame = null;
+  }
+}
+
+function fakeGame() {
+  const rt = Array.from({ length: 20 }, () => Math.round(300 + Math.random() * 150));
+  return { game_id: currentGame, rt_ms: rt, correct: rt.map(() => Math.random() > 0.05) };
+}
+
+$("connectBtn").onclick = () => {
+  connect("temi", $("temiToken").value, $("temiDot"), onTemi);
+  connect("pi", $("piToken").value, $("piDot"), onPi);
+};
+document.querySelectorAll("[data-rfid]").forEach((b) => { b.onclick = () => send("pi", "rfid.scanned", { tag: b.dataset.rfid }); });
+document.querySelectorAll("[data-speed]").forEach((b) => { b.onclick = () => $("speed").value = b.dataset.speed; });
+document.querySelectorAll("[data-trial]").forEach((b) => { b.onclick = () => {
+  if (!currentTrial) { alert("진행 중인 측정이 없습니다"); return; }
+  const speed = parseFloat($("speed").value);
+  const words = $("words").value === "" ? null : parseInt($("words").value, 10);
+  const m = { trial_id: currentTrial.trial_id, speed_mps: speed, duration_s: +(4 / speed).toFixed(2), stopped: false, max_persons: 1, min_confidence: 0.9, word_count: words };
+  if (b.dataset.trial === "stopped") m.stopped = true;
+  if (b.dataset.trial === "out") m.min_confidence = 0.2;
+  if (b.dataset.trial === "two") m.max_persons = 2;
+  if (b.dataset.trial === "silent") m.word_count = 1;
+  if (b.dataset.trial === "early") { m.early_start = true; m.speed_mps = null; m.duration_s = null; }
+  send("pi", "trial.completed", m);
+  $("trialInfo").textContent = "결과 전송함. 다음 지시를 기다리는 중"; currentTrial = null;
+}; });
+$("gameDone").onclick = () => { if (!currentGame) return alert("진행 중인 게임이 없습니다"); send("pi", "game.completed", fakeGame()); $("gameInfo").textContent = "결과 전송함"; currentGame = null; };
+$("memoryDone").onclick = () => { send("temi", "game.completed", fakeGame()); $("memoryBox").classList.add("hidden"); currentGame = null; };
+$("readyBtn").onclick = () => { if (currentTrial) send("pi", "trial.ready", { trial_id: currentTrial.trial_id }); };
+$("fall").onclick = () => send("pi", "safety.alert", { kind: "fall", detail: "포즈 높이 급변" });
+
+function sayText(text) { if (text) send("temi", "speech.heard", { text }); }
+$("speechSend").onclick = () => { sayText($("speech").value); $("speech").value = ""; };
+document.querySelectorAll("[data-say]").forEach((b) => { b.onclick = () => sayText(b.dataset.say); });
+function answerAsk(text) { send("temi", "speech.heard", { text }, { reply_to: pendingAsk }); $("askBox").classList.add("hidden"); pendingAsk = null; }
+$("askSend").onclick = () => answerAsk($("askInput").value);
+document.querySelectorAll("[data-ask]").forEach((b) => { b.onclick = () => answerAsk(b.dataset.ask); });
+document.querySelectorAll("[data-call]").forEach((b) => { b.onclick = () => {
+  send("temi", "video_call.result", { staff_id: pendingCall.staff_id, answered: b.dataset.call === "true" }, { reply_to: pendingCall.id });
+  $("callBox").classList.add("hidden"); pendingCall = null;
+}; });
+$("clearLog").onclick = () => $("logPre").textContent = "";
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { "content-type": "application/json", ...(appToken ? { authorization: `Bearer ${appToken}` } : {}) } });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json();
+}
+async function loadRequests() {
+  const list = await api("/api/requests?status=pending");
+  const el = $("requests"); el.innerHTML = list.length ? "" : "<small>없음</small>";
+  for (const r of list) {
+    const div = document.createElement("div");
+    div.className = "req" + (r.priority === "urgent" ? " urgent" : "");
+    div.innerHTML = `<small>#${r.id} · ${r.kind} · ${r.priority} · ${r.topic}</small><div></div><div class="row"></div>`;
+    div.children[1].textContent = r.text;
+    const row = div.children[2];
+    const answers = r.options.length ? r.options : ["확인했습니다"];
+    for (const opt of answers) {
+      const b = document.createElement("button"); b.textContent = opt;
+      b.onclick = async () => { await api(`/api/requests/${r.id}/answer`, { method: "POST", body: JSON.stringify({ answer: opt }) }); loadRequests(); };
+      row.appendChild(b);
+    }
+    el.appendChild(div);
+  }
+}
+$("loginBtn").onclick = async () => {
+  try {
+    const out = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: $("appUser").value, password: $("appPw").value }) });
+    appToken = out.access_token;
+    appWs?.close();
+    appWs = new WebSocket(`${wsBase}/ws/app?token=${appToken}`);
+    appWs.onopen = () => { $("appDot").textContent = `${out.user.name}`; $("appDot").classList.add("on"); };
+    appWs.onclose = () => { $("appDot").classList.remove("on"); };
+    appWs.onmessage = (e) => { const msg = JSON.parse(e.data); log("←", "app", msg); if (msg.type.startsWith("request.")) loadRequests(); };
+    loadRequests();
+  } catch (e) { alert(e.message); }
+};
+$("startB").onclick = async () => {
+  if (!appToken) return alert("먼저 로그인하세요");
+  const residents = await api("/api/residents");
+  const b = residents.find((r) => r.name === "B");
+  if (!b) return alert("이 계정으로는 B가 보이지 않습니다. guardian_b나 staff로 로그인하세요");
+  await api("/api/dev/sessions/start", { method: "POST", body: JSON.stringify({ resident_id: b.id }) });
+};
+</script>
+</body>
+</html>

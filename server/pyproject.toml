@@ -1,0 +1,13 @@
+[project]
+name = "temi-server"
+version = "0.1.0"
+description = "Temi 이중과제 보행 검사 서버"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "pydantic-settings>=2.6",
+    "pyjwt>=2.10",
+]

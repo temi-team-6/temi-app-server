@@ -13,12 +13,37 @@ docker compose up -d --build
 - 시뮬레이터: http://localhost:8000/sim/
 - 상태: http://localhost:8000/api/health
 
-처음 뜰 때 DB가 비어 있으면 개발용 계정과 시연용 가상 기록을 넣는다(계정은 protocol.md 8장).
+api 컨테이너는 뜨기 전에 `alembic upgrade head`로 DB 스키마를 최신으로 맞춘다. 그다음 DB가 비어 있으면 개발용 계정과 시연용 가상 기록을 넣는다(계정은 protocol.md 8장).
 
-DB를 처음 상태로 되돌리기:
+DB를 처음 상태로 되돌리기(모든 데이터 삭제 → 마이그레이션 → 시드):
 
 ```bash
 docker compose exec api python -m app.seed --reset
+```
+
+## DB 스키마 변경 (Alembic)
+
+모델(`server/app/models.py`)을 바꾸면 마이그레이션 파일을 만들어 함께 커밋한다. 배포하면 api가 뜨면서 자동으로 적용하고, 기존 데이터는 유지된다.
+
+```bash
+docker compose exec api alembic revision --autogenerate -m "add something"
+docker compose cp api:/app/migrations/versions/. server/migrations/versions/   # 생성된 파일을 저장소로 가져오기
+```
+
+- 생성된 파일은 꼭 열어서 확인한다. 컬럼 이름 변경은 "삭제 + 추가"로 나오므로 직접 `alter_column`으로 고친다.
+- 현재 버전 확인: `docker compose exec api alembic current`
+- enum 값 추가(`topic`, `condition` 등)는 문자열 컬럼이라 마이그레이션이 필요 없다.
+- 마이그레이션 도입 전에 만든 DB(`alembic_version` 테이블 없음)는 api가 뜨지 못한다. 한 번만 `docker compose down -v`로 볼륨을 지우고 다시 띄운다.
+
+## 앱 API 클라이언트 생성
+
+`/openapi.json`의 operationId는 라우트 함수 이름(`login`, `list_requests`, `get_trend` 등)으로 고정돼 있고, 태그(`auth`, `residents`, `requests`, `chat`, `system`, `dev`)는 생성되는 API 클래스 단위다. **앱이 생성 코드를 쓰므로 기존 함수 이름과 태그는 바꾸지 않는다.** 새 API는 추가만 한다.
+
+```bash
+# 예: Flutter(dio)
+npx @openapitools/openapi-generator-cli generate -i https://temi.hylink.kr/openapi.json -g dart-dio -o temi_api
+# 예: Android(Kotlin)
+npx @openapitools/openapi-generator-cli generate -i https://temi.hylink.kr/openapi.json -g kotlin -o temi-api
 ```
 
 ## Cloudflare Tunnel로 공개
@@ -54,7 +79,9 @@ docker compose --profile tunnel up -d
 ```bash
 cd server
 uv sync
-DATABASE_URL=postgresql+asyncpg://temi:<비밀번호>@localhost:5432/temi uv run uvicorn app.main:app --reload
+export DATABASE_URL=postgresql+asyncpg://temi:<비밀번호>@localhost:5432/temi
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
 ```
 
 DB는 `docker compose up -d db`로 띄우고, 5432 포트를 열어야 한다(compose 기본값은 열지 않는다).
@@ -62,6 +89,7 @@ DB는 `docker compose up -d db`로 띄우고, 5432 포트를 열어야 한다(co
 ## 구조
 
 ```text
+server/migrations/  Alembic 마이그레이션 (versions/에 변경 이력)
 server/app/
   main.py      앱 생성, WebSocket 엔드포인트
   api.py       REST API

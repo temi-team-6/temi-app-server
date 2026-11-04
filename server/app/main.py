@@ -14,7 +14,7 @@ from .agent import agent
 from .api import router
 from .auth import device_from_token, user_id_from_token
 from .config import settings
-from .db import Base, SessionLocal, engine
+from .db import SessionLocal, engine
 from .hub import AppClient, hub
 from .models import User
 from .protocol import Envelope, make
@@ -26,8 +26,6 @@ log = logging.getLogger("temi")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     await seed_if_empty()
     yield
     await engine.dispose()

@@ -35,7 +35,7 @@ from .schemas import (
     request_out,
 )
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", generate_unique_id_function=lambda route: route.name)
 
 CONSULT_GUIDE = "치매상담콜센터(1899-9988)나 가까운 치매안심센터에서 상담을 받으실 수 있습니다."
 
@@ -77,12 +77,12 @@ async def _visible_resident(db: AsyncSession, resident_id: int, user: User) -> R
     return resident
 
 
-@router.get("/health")
+@router.get("/health", tags=["system"])
 async def health() -> HealthOut:
     return HealthOut(ok=True, devices=sorted(hub.devices), app_clients=len(hub.apps))
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", tags=["auth"])
 async def login(body: LoginIn, db: AsyncSession = Depends(get_db)) -> LoginOut:
     user = await db.scalar(select(User).where(User.username == body.username))
     if user is None or not verify_password(body.password, user.password_hash):
@@ -90,12 +90,12 @@ async def login(body: LoginIn, db: AsyncSession = Depends(get_db)) -> LoginOut:
     return LoginOut(access_token=issue_token(user), user=_user_out(user))
 
 
-@router.get("/me")
-async def me(user: User = Depends(current_user)) -> UserOut:
+@router.get("/me", tags=["auth"])
+async def get_me(user: User = Depends(current_user)) -> UserOut:
     return _user_out(user)
 
 
-@router.get("/residents")
+@router.get("/residents", tags=["residents"])
 async def list_residents(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> list[ResidentOut]:
     query = select(Resident).order_by(Resident.id)
     if user.role == Role.GUARDIAN:
@@ -103,21 +103,21 @@ async def list_residents(user: User = Depends(current_user), db: AsyncSession = 
     return [_resident_out(r) for r in await db.scalars(query)]
 
 
-@router.get("/residents/{resident_id}")
+@router.get("/residents/{resident_id}", tags=["residents"])
 async def get_resident(resident_id: int, user: User = Depends(current_user),
                        db: AsyncSession = Depends(get_db)) -> ResidentOut:
     return _resident_out(await _visible_resident(db, resident_id, user))
 
 
-@router.get("/residents/{resident_id}/trend")
-async def trend(resident_id: int, user: User = Depends(current_user),
+@router.get("/residents/{resident_id}/trend", tags=["residents"])
+async def get_trend(resident_id: int, user: User = Depends(current_user),
                 db: AsyncSession = Depends(get_db)) -> list[SessionSummary]:
     await _visible_resident(db, resident_id, user)
     return [session_summary(s) for s in await resident_sessions(db, resident_id)]
 
 
-@router.get("/residents/{resident_id}/sessions/{session_id}")
-async def session_detail(resident_id: int, session_id: int, user: User = Depends(current_user),
+@router.get("/residents/{resident_id}/sessions/{session_id}", tags=["residents"])
+async def get_session(resident_id: int, session_id: int, user: User = Depends(current_user),
                          db: AsyncSession = Depends(get_db)) -> SessionDetail:
     await _visible_resident(db, resident_id, user)
     session = next((s for s in await resident_sessions(db, resident_id) if s.id == session_id), None)
@@ -141,7 +141,7 @@ async def session_detail(resident_id: int, session_id: int, user: User = Depends
     )
 
 
-@router.get("/residents/{resident_id}/observations")
+@router.get("/residents/{resident_id}/observations", tags=["residents"])
 async def list_observations(resident_id: int, user: User = Depends(current_user),
                             db: AsyncSession = Depends(get_db)) -> list[ObservationOut]:
     await _visible_resident(db, resident_id, user)
@@ -151,7 +151,7 @@ async def list_observations(resident_id: int, user: User = Depends(current_user)
     return [ObservationOut(id=o.id, source=o.source, text=o.text, data=o.data, created_at=o.created_at) for o in rows]
 
 
-@router.post("/residents/{resident_id}/observations", status_code=status.HTTP_201_CREATED)
+@router.post("/residents/{resident_id}/observations", status_code=status.HTTP_201_CREATED, tags=["residents"])
 async def add_observation(resident_id: int, body: ObservationIn, user: User = Depends(current_user),
                           db: AsyncSession = Depends(get_db)) -> CreatedOut:
     await _visible_resident(db, resident_id, user)
@@ -162,7 +162,7 @@ async def add_observation(resident_id: int, body: ObservationIn, user: User = De
     return CreatedOut(id=obs.id)
 
 
-@router.get("/requests")
+@router.get("/requests", tags=["requests"])
 async def list_requests(status_: RequestStatus | None = Query(None, alias="status"), user: User = Depends(current_user),
                         db: AsyncSession = Depends(get_db)) -> list[RequestOut]:
     query = select(AgentRequest).where(AgentRequest.target_role == user.role).order_by(AgentRequest.created_at.desc())
@@ -173,7 +173,7 @@ async def list_requests(status_: RequestStatus | None = Query(None, alias="statu
     return [request_out(r) for r in await db.scalars(query)]
 
 
-@router.post("/requests/{request_id}/answer")
+@router.post("/requests/{request_id}/answer", tags=["requests"])
 async def answer_request(request_id: int, body: AnswerIn, user: User = Depends(current_user),
                          db: AsyncSession = Depends(get_db)) -> RequestOut:
     req = await db.get(AgentRequest, request_id)
@@ -186,7 +186,7 @@ async def answer_request(request_id: int, body: AnswerIn, user: User = Depends(c
     return request_out(await agent.answer_request(request_id, body.answer, user))
 
 
-@router.post("/chat")
+@router.post("/chat", tags=["chat"])
 async def chat(body: ChatIn, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)) -> ChatOut:
     resident = await _visible_resident(db, body.resident_id, user)
     db.add(Observation(resident_id=resident.id, source=ObservationSource(user.role.value), author_id=user.id,
@@ -203,7 +203,7 @@ async def chat(body: ChatIn, user: User = Depends(current_user), db: AsyncSessio
     return ChatOut(reply=reply, generated_at=datetime.now().astimezone(), mock=True)
 
 
-@router.post("/dev/sessions/start")
+@router.post("/dev/sessions/start", tags=["dev"])
 async def dev_start_session(body: StartSessionIn, _: User = Depends(current_user)) -> StartSessionOut:
     try:
         return StartSessionOut(session_id=await agent.start_session(body.resident_id))

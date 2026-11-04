@@ -10,4 +10,5 @@ dependencies = [
     "asyncpg>=0.30",
     "pydantic-settings>=2.6",
     "pyjwt>=2.10",
+    "alembic>=1.14",
 ]

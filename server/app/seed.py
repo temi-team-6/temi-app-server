@@ -3,12 +3,15 @@ import random
 import statistics
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import func, select
 
 from .config import settings
-from .db import Base, SessionLocal, engine
+from .db import SessionLocal, engine
 from .auth import hash_password
 from .models import (
     Condition,
@@ -102,15 +105,19 @@ async def seed_if_empty() -> None:
     await seed()
 
 
-async def reset() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+async def _seed_and_dispose() -> None:
     await seed()
     await engine.dispose()
+
+
+def reset() -> None:
+    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    command.downgrade(cfg, "base")
+    command.upgrade(cfg, "head")
+    asyncio.run(_seed_and_dispose())
 
 
 if __name__ == "__main__":
     if sys.argv[1:] != ["--reset"]:
         sys.exit("usage: python -m app.seed --reset")
-    asyncio.run(reset())
+    reset()

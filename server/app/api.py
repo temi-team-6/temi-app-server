@@ -204,7 +204,9 @@ async def chat(body: ChatIn, user: User = Depends(current_user), db: AsyncSessio
 
 
 @router.post("/dev/sessions/start", tags=["dev"])
-async def dev_start_session(body: StartSessionIn, _: User = Depends(current_user)) -> StartSessionOut:
+async def dev_start_session(body: StartSessionIn, user: User = Depends(current_user)) -> StartSessionOut:
+    if user.role != Role.STAFF:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "staff only")
     try:
         return StartSessionOut(session_id=await agent.start_session(body.resident_id))
     except LookupError as e:

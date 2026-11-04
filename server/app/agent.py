@@ -153,7 +153,8 @@ class Agent:
             req.answered_at = datetime.now(UTC)
             req.status = RequestStatus.ANSWERED
             await db.commit()
-        await hub.send_apps(make("request.updated", request_out(req).model_dump(mode="json")), role=req.target_role)
+        await hub.send_apps(make("request.updated", request_out(req).model_dump(mode="json")), role=req.target_role,
+                            user_id=req.target_user_id if req.target_role == Role.GUARDIAN else None)
         if req.resident_id is not None and req.topic == "condition_check":
             await self._judge_guardian_answer(req.resident_id, answer)
         elif req.resident_id is not None:

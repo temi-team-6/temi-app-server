@@ -133,7 +133,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | type | payload | 설명 |
 |---|---|---|
 | `request.created` | 요청 객체 | 에이전트가 새 질문·확인 요청·알림을 만들었다. 보호자 요청은 해당 보호자에게만, 요양사 요청은 요양사 전체에게 간다 |
-| `request.updated` | 요청 객체 | 누군가 답했다 |
+| `request.updated` | 요청 객체 | 누군가 답했다. 보내는 대상은 `request.created`와 같다 |
 
 요청 객체는 `GET /api/requests`의 항목과 같다.
 
@@ -215,7 +215,7 @@ trial.completed ─▶ 유효 판정
 | GET | `/api/requests?status=pending` | 나에게 온 요청 |
 | POST | `/api/requests/{id}/answer` | 요청에 답하기 |
 | POST | `/api/chat` | 보호자 챗봇. 1단계는 고정 응답(`mock: true`) |
-| POST | `/api/dev/sessions/start` | 개발용. RFID 없이 검사 시작 |
+| POST | `/api/dev/sessions/start` | 개발용. RFID 없이 검사 시작. 요양사 계정만(보호자는 403) |
 | GET | `/api/health` | 연결된 기기 목록 |
 
 ## 7. 데이터 의미

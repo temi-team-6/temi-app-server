@@ -10,16 +10,19 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import func, select
 
+from .auth import hash_password
 from .config import settings
 from .db import SessionLocal, engine
-from .auth import hash_password
 from .models import (
+    AgentRequest,
     Condition,
     GameResult,
     GameStatus,
     GameType,
     Observation,
     ObservationSource,
+    Priority,
+    RequestKind,
     Resident,
     Role,
     SessionStatus,
@@ -95,7 +98,35 @@ async def seed() -> None:
                                   rt_sd_ms=round(statistics.stdev(hits), 1)))
             db.add(Observation(resident_id=resident.id, source=ObservationSource.SYSTEM,
                                text=f"시연용 가상 기록 {len(days)}회 생성", data={"synthetic": True}))
+        db.add_all(_example_requests(residents, users))
         await db.commit()
+
+
+def _example_requests(residents: dict[str, Resident], users: dict[str, User]) -> list[AgentRequest]:
+    """앱 화면을 로봇 검사 없이 개발할 수 있도록 대기 중인 요청을 종류별로 하나씩 넣는다."""
+    questions = [
+        AgentRequest(
+            resident_id=residents[key].id, target_role=Role.GUARDIAN, target_user_id=users[guardian].id,
+            kind=RequestKind.QUESTION, priority=Priority.NORMAL, topic="condition_check",
+            text=f"[시연 예시] {key}님의 오늘 걷기 검사 결과가 평소와 조금 달랐습니다. "
+                 "이번 주 수면이나 컨디션에 변화가 있었나요?",
+            options=["잠을 잘 못 주무셨어요", "평소와 같아요", "요즘 길을 자주 헤매세요"],
+        )
+        for key, guardian in (("A", "guardian_a"), ("B", "guardian_b"))
+    ]
+    return [
+        *questions,
+        AgentRequest(
+            resident_id=residents["A"].id, target_role=Role.STAFF, kind=RequestKind.CHECK,
+            priority=Priority.NORMAL, topic="pain_check",
+            text="[시연 예시] A님이 통증('다리가 조금 아파요')을 호소해 보행 검사를 중단했습니다. 확인 부탁드립니다.",
+        ),
+        AgentRequest(
+            resident_id=residents["B"].id, target_role=Role.STAFF, kind=RequestKind.ALERT,
+            priority=Priority.URGENT, topic="emergency",
+            text="[시연 예시] B님 안전 신호(fall) 감지. 검사를 중단하고 영상통화를 연결합니다.",
+        ),
+    ]
 
 
 async def seed_if_empty() -> None:

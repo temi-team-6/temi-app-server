@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     lead_in_s: float = 2.0
     # 배포 시 docker build 인자로 넣는다(scripts/deploy.sh). /api/health에서 어떤 커밋이 돌고 있는지 확인한다.
     git_commit: str = "unknown"
+    # 비어 있으면 LLM을 부르지 않고 규칙 응답만 쓴다(app/llm.py).
+    anthropic_api_key: str = ""
+    llm_model_fast: str = "claude-haiku-5-5"
+    llm_model_smart: str = "claude-sonnet-5-5"
+    llm_timeout_s: float = 10.0
 
 
 settings = Settings()

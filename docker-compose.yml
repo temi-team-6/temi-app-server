@@ -15,7 +15,10 @@ services:
       retries: 20
 
   api:
-    build: ./server
+    build:
+      context: ./server
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     restart: unless-stopped
     env_file: .env
     environment:

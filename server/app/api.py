@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .agent import agent
 from .auth import current_user, issue_token, verify_password
+from .config import settings
 from .db import get_db
 from .hub import hub
 from .models import (
@@ -79,7 +80,7 @@ async def _visible_resident(db: AsyncSession, resident_id: int, user: User) -> R
 
 @router.get("/health", tags=["system"])
 async def health() -> HealthOut:
-    return HealthOut(ok=True, devices=sorted(hub.devices), app_clients=len(hub.apps))
+    return HealthOut(ok=True, devices=sorted(hub.devices), app_clients=len(hub.apps), commit=settings.git_commit)
 
 
 @router.post("/auth/login", tags=["auth"])

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     ready_timeout_s: float = 10.0
     ready_prompts: int = 2
     lead_in_s: float = 2.0
+    # 배포 시 docker build 인자로 넣는다(scripts/deploy.sh). /api/health에서 어떤 커밋이 돌고 있는지 확인한다.
+    git_commit: str = "unknown"
 
 
 settings = Settings()

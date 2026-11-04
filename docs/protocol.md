@@ -216,7 +216,7 @@ trial.completed ─▶ 유효 판정
 | POST | `/api/requests/{id}/answer` | 요청에 답하기 |
 | POST | `/api/chat` | 보호자 챗봇. 1단계는 고정 응답(`mock: true`) |
 | POST | `/api/dev/sessions/start` | 개발용. RFID 없이 검사 시작. 요양사 계정만(보호자는 403) |
-| GET | `/api/health` | 연결된 기기 목록 |
+| GET | `/api/health` | 연결된 기기 목록, 배포된 커밋(`commit`) |
 
 ## 7. 데이터 의미
 

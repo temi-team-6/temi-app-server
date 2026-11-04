@@ -119,6 +119,7 @@ class HealthOut(BaseModel):
     ok: bool
     devices: list[str]
     app_clients: int
+    commit: str
 
 
 def request_out(r: AgentRequest) -> RequestOut:

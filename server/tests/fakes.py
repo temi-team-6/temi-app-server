@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.agent import agent
@@ -55,11 +55,12 @@ class FakeDevices:
     """Temi와 Pi를 흉내 낸다. Temi는 말을 다 하면 say_done을, Pi는 trial.start에 ready를 바로 보낸다.
 
     walk를 주면 trial.go를 받았을 때 그 조건의 결과로 trial.completed를 보낸다.
+    결과가 목록이면 측정할 때마다 앞에서부터 하나씩 쓰고, 마지막 것을 계속 쓴다.
     None이면 측정 결과를 보내지 않으므로 테스트가 직접 이벤트를 보낸다.
     """
 
     def __init__(self) -> None:
-        self.walk: dict[str, Message] | None = None
+        self.walk: Mapping[str, Message | list[Message]] | None = None
         self.temi = FakeSocket(self._temi_frame)
         self.pi = FakeSocket(self._pi_frame)
         self._conditions: dict[int, str] = {}
@@ -87,6 +88,8 @@ class FakeDevices:
             self._emit("pi", "trial.ready", {"trial_id": payload["trial_id"]})
         elif msg["type"] == "trial.go" and self.walk is not None:
             result = self.walk[self._conditions[payload["trial_id"]]]
+            if isinstance(result, list):
+                result = result.pop(0) if len(result) > 1 else result[0]
             self._emit("pi", "trial.completed", {"trial_id": payload["trial_id"], **result})
 
     async def drain(self) -> None:

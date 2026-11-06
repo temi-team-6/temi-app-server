@@ -85,6 +85,11 @@ class Arrived(BaseModel):
     location: str
 
 
+class GotoFailed(BaseModel):
+    location: str
+    reason: str | None = Field(None, description="SDK가 알려 준 중단 설명(장애물 등)")
+
+
 class VideoCallResult(BaseModel):
     staff_id: int
     answered: bool
@@ -99,5 +104,6 @@ EVENT_PAYLOADS: dict[str, type[BaseModel]] = {
     "speech.heard": SpeechHeard,
     "safety.alert": SafetyAlert,
     "temi.arrived": Arrived,
+    "temi.goto_failed": GotoFailed,
     "video_call.result": VideoCallResult,
 }

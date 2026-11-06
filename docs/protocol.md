@@ -1,6 +1,6 @@
 # 서버 연동 규약 (1단계)
 
-Temi 앱, 라즈베리파이(+Arduino), 보호자·요양사 앱이 서버와 주고받는 형식을 정한다. 서버의 판단 로직은 아직 **고정 규칙으로 동작하는 임시 에이전트**다. LLM 에이전트로 바뀌어도 이 문서의 메시지 형식은 그대로 유지한다.
+Temi 앱, 라즈베리파이(+Arduino), 보호자·요양사 앱이 서버와 주고받는 형식을 정한다. 서버의 판단은 **규칙**으로 하고, Claude(LLM)는 보호자 챗봇, 결과 해설 문장, 키워드가 놓친 발화·답변 분류에만 쓴다. LLM이 실패하거나 느리면 규칙 응답으로 진행한다. 안전 신호는 LLM을 거치지 않는다. 판단 방식이 바뀌어도 이 문서의 메시지 형식은 그대로 유지한다.
 
 REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 문서는 WebSocket 메시지와 결정 사항을 다룬다.
 
@@ -69,7 +69,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `temi.goto` | `{location}` | 저장된 위치로 이동하고 도착하면 `temi.arrived`를 보낸다 |
 | `temi.video_call` | `{staff_id, name}` | 해당 요양사에게 영상통화를 건다. 결과는 `video_call.result`로 보낸다 |
 
-`temi.goto`는 형식만 정해 두었다. 임시 에이전트는 아직 보내지 않는다.
+`temi.goto`는 형식만 정해 두었다. 에이전트는 아직 보내지 않는다(보행 구간 시범 이동에서 쓸 예정).
 
 ### Temi → 서버
 
@@ -78,6 +78,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `temi.say_done` | `{}` | `temi.say` 하나를 다 말했을 때(SDK의 TTS 완료 콜백). `reply_to`에 그 `temi.say`의 `id`를 넣는다. **필수**: 서버는 이걸 받고 나서 출발 신호를 보낸다 |
 | `speech.heard` | `{text}` | 참가자 발화를 인식했을 때. `temi.ask`의 답이면 `reply_to`를 붙인다 |
 | `temi.arrived` | `{location}` | `temi.goto` 도착 |
+| `temi.goto_failed` | `{location, reason?}` | 이동이 중단됨(SDK 이동 상태 `abort`). `reason`에 SDK가 준 설명(장애물 등) |
 | `video_call.result` | `{staff_id, answered}` | 통화 연결 성공(`true`) 또는 무응답·거절(`false`) |
 | `game.completed` | `{game_id, rt_ms[], correct[]}` | 터치스크린 게임(그림카드)이 끝났을 때 |
 
@@ -134,6 +135,10 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 |---|---|---|
 | `request.created` | 요청 객체 | 에이전트가 새 질문·확인 요청·알림을 만들었다. 보호자 요청은 해당 보호자에게만, 요양사 요청은 요양사 전체에게 간다 |
 | `request.updated` | 요청 객체 | 누군가 답했다. 보내는 대상은 `request.created`와 같다 |
+| `observation.created` | `{resident_id, observation_id}` | 관찰 기록이 추가됐다(요양사 메모, 보호자 답변, 에이전트 기록) |
+| `session.ended` | `{resident_id, session_id, status, end_reason}` | 검사가 끝났다. `status`: `completed`, `aborted` |
+
+`observation.created`와 `session.ended`는 그 어르신을 볼 수 있는 연결(요양사 전체, 연결된 보호자)에만 간다. id만 담기므로, 앱은 이벤트를 받으면 REST로 다시 조회한다.
 
 요청 객체는 `GET /api/requests`의 항목과 같다.
 
@@ -143,6 +148,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
   "target_role": "guardian", "kind": "question", "priority": "normal",
   "topic": "condition_check",
   "text": "B님의 오늘 걷기 검사 결과가 평소와 조금 달랐습니다. 이번 주 수면이나 컨디션에 변화가 있었나요?",
+  "explanation": "오늘 검사에서 이중과제 비용이 ... 두 과제 모두 개인 기준보다 높았습니다. ... 진단이 아니며 ...",
   "options": ["잠을 잘 못 주무셨어요", "평소와 같아요", "요즘 길을 자주 헤매세요"],
   "status": "pending", "answer": null,
   "created_at": "...", "answered_at": null
@@ -155,6 +161,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `priority` | `urgent`(즉시 알림), `normal`, `digest`(일일 요약) |
 | `topic` | 앱이 화면을 고르는 데 쓴다. `condition_check`, `pain_check`, `emergency`, `consult` |
 | `options` | 빈 배열이면 자유 입력 |
+| `explanation` | 판단 근거를 보호자에게 설명하는 문장. 없으면 `null`. 지금은 `condition_check` 질문에만 붙는다 |
 
 답변: `POST /api/requests/{id}/answer` `{"answer": "..."}`. 이미 답한 요청이면 409.
 
@@ -176,8 +183,8 @@ trial.completed ─▶ 유효 판정
                    유효 → 다음 조건(animals → countdown)
                    무효 → temi.say(사유별 안내) + 같은 조건 재측정(최대 3회)
 ...
-                   세 조건 완료 → 이중과제 비용 계산 → 기준선 비교
-                   기준 초과 → 보호자에게 request.created(condition_check)
+                   세 조건 완료 → 이중과제 비용 계산 → 기준선 비교(확인 후 판단, 아래)
+                   일관된 초과 → 보호자에게 request.created(condition_check, 해설 포함)
                ├─ temi.say (마무리) ─────▶
                └─ temi.show idle ────────▶
 ```
@@ -189,7 +196,14 @@ trial.completed ─▶ 유효 판정
 - Temi가 `temi.say_done`을 20초 안에 보내지 않으면 서버는 경고를 남기고 진행한다.
 - 대기 시간(`READY_TIMEOUT_S`, `LEAD_IN_S` 등)은 `.env`로 바꿀 수 있다.
 
-검사 중 발화(`speech.heard`)에 대한 임시 규칙:
+확인 후 판단(규칙):
+
+- 측정한 이중과제 조건(동물 이름, 숫자 거꾸로 세기)이 **모두** 개인 기준(평균 + 2SD)을 넘어야 변화 신호로 보고 보호자에게 물는다.
+- 한 조건만 넘으면 Temi가 "한 번 더 확인해 볼게요"라고 하고 그 조건을 한 번 더 쟴다(`trial.start`의 `attempt`가 하나 늘어난다). 그래도 두 조건이 일치하지 않으면 관찰 기록만 남기고 묻지 않는다. 재측정에서 기준 안으로 돌아오면 일시적 차이로 기록한다.
+- 같은 시간대 기록이 3회 이상이면 그것만 비교한다. 부족한데 평소 시간대와 다르면 질문과 해설에 그 사실을 적는다.
+- 해설 문장은 규칙으로 만든 초안을 Claude가 다듬는다. 실패하면 초안을 그대로 쓴다.
+
+검사 중 발화(`speech.heard`) 처리. 키워드를 먼저 보고, 키워드가 놓친 말만 Claude로 분류한다. 이중과제 측정 중에는 말하기 자체가 과제라 분류하지 않는다. 통증 정도는 키워드나 Claude 중 하나라도 심하다고 보면 심한 것으로 처리한다(낮추지 않는다):
 
 | 발화 | 처리 |
 |---|---|
@@ -214,7 +228,8 @@ trial.completed ─▶ 유효 판정
 | GET/POST | `/api/residents/{id}/observations` | 관찰 기록 조회, 메모 추가 |
 | GET | `/api/requests?status=pending` | 나에게 온 요청 |
 | POST | `/api/requests/{id}/answer` | 요청에 답하기 |
-| POST | `/api/chat` | 보호자 챗봇. 1단계는 고정 응답(`mock: true`) |
+| POST | `/api/chat` | 보호자 챗봇. `{resident_id, message}` → `{reply, generated_at, mock}`. Claude가 답하면 `mock: false`, 실패해 고정 응답이면 `mock: true`. 질문은 관찰 기록에도 남는다 |
+| GET | `/api/residents/{id}/chat` | 내 계정의 챗봇 대화(오래된 순). 항목 `{id, role: user\|assistant, text, mock, created_at}`. 다른 계정의 대화는 보이지 않는다 |
 | POST | `/api/dev/sessions/start` | 개발용. RFID 없이 검사 시작. 요양사 계정만(보호자는 403) |
 | GET | `/api/health` | 연결된 기기 목록, 배포된 커밋(`commit`) |
 
@@ -257,7 +272,7 @@ A·B 모두 지난 3주 동안 월·수·금 오전에 검사한 가상 기록�
 | 음성 업로드 | 없음 | 외부 마이크와 서버 STT를 쓰면 업로드 API를 추가한다 |
 | 영상통화 방식 | Temi 내장 통화를 가정 | 안 되면 `temi.video_call` 처리 주체가 바뀐다 |
 | 앱 푸시 | 앱이 열려 있을 때 WebSocket으로만 받는다 | FCM을 쓰면 서버에 기기 토큰 등록 API를 추가한다 |
-| 에이전트 | 고정 규칙 | LLM 에이전트로 교체. 메시지 형식은 유지한다 |
+| 에이전트 | 판단은 규칙, 해설·챗봇·분류는 Claude | 실기기 음성 인식 결과에 맞춰 분류 문구와 키워드를 조정한다(12월). 메시지 형식은 유지한다 |
 
 ## 10. 담당별 시작점
 

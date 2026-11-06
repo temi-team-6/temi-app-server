@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..db import SessionLocal
+from ..events import notify_resident
 from ..hub import hub
 from ..models import (
     AgentRequest,
@@ -35,11 +36,13 @@ class SessionState:
     step: int = 0
     mode: str = "walk"
     trial_id: int | None = None
+    trial_condition: str | None = None
     call_queue: list[tuple[int, str]] = field(default_factory=list)
     gate: asyncio.Task[None] | None = None
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     said: asyncio.Event = field(default_factory=asyncio.Event)
     awaiting_say: str | None = None
+    confirmed: bool = False
 
 
 class AgentCore:
@@ -66,15 +69,19 @@ class AgentCore:
             await db.commit()
         self.state = None
         await self._temi("temi.show", {"screen": "idle"})
+        await notify_resident("session.ended", {"session_id": st.session_id, "status": status.value,
+                                                "end_reason": reason}, st.resident_id)
 
     async def _observe(self, resident_id: int, source: ObservationSource, text: str, *,
                        author_id: int | None = None, data: dict[str, Any] | None = None) -> None:
         async with SessionLocal() as db:
-            db.add(Observation(resident_id=resident_id, source=source, author_id=author_id, text=text, data=data or {}))
+            obs = Observation(resident_id=resident_id, source=source, author_id=author_id, text=text, data=data or {})
+            db.add(obs)
             await db.commit()
+        await notify_resident("observation.created", {"observation_id": obs.id}, resident_id)
 
     async def _create_request(self, resident_id: int, role: Role, kind: RequestKind, priority: Priority, topic: str,
-                              text: str, *, options: list[str] | None = None) -> None:
+                              text: str, *, options: list[str] | None = None, explanation: str | None = None) -> None:
         async with SessionLocal() as db:
             target_user_id = None
             if role == Role.GUARDIAN:
@@ -89,6 +96,7 @@ class AgentCore:
                 priority=priority,
                 topic=topic,
                 text=text,
+                explanation=explanation,
                 options=options or [],
             )
             db.add(req)

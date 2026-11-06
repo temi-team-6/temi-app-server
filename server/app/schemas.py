@@ -98,6 +98,7 @@ class RequestOut(BaseModel):
     priority: Priority
     topic: str
     text: str
+    explanation: str | None = None
     options: list[str]
     status: RequestStatus
     answer: str | None
@@ -109,6 +110,14 @@ class ChatOut(BaseModel):
     reply: str
     generated_at: datetime
     mock: bool
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    role: str
+    text: str
+    mock: bool
+    created_at: datetime
 
 
 class StartSessionOut(BaseModel):
@@ -132,6 +141,7 @@ def request_out(r: AgentRequest) -> RequestOut:
         priority=r.priority,
         topic=r.topic,
         text=r.text,
+        explanation=r.explanation,
         options=r.options,
         status=r.status,
         answer=r.answer,

@@ -15,6 +15,7 @@ from ..protocol import (
     Arrived,
     Envelope,
     GameCompleted,
+    GotoFailed,
     RfidScanned,
     SafetyAlert,
     SayDone,
@@ -63,6 +64,8 @@ class Agent(GuardianFlow):
                 await self._on_video_call_result(payload)
             case Arrived():
                 log.info("temi arrived at %s", payload.location)
+            case GotoFailed():
+                log.warning("temi failed to reach %s: %s", payload.location, payload.reason)
 
 
 agent = Agent()

@@ -1,14 +1,14 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import chat as chatbot
 from .agent import agent
 from .auth import current_user, issue_token, verify_password
 from .config import settings
 from .db import get_db
+from .events import notify_resident
 from .hub import hub
 from .models import (
     AgentRequest,
@@ -21,6 +21,7 @@ from .models import (
 )
 from .queries import resident_sessions, session_summary
 from .schemas import (
+    ChatMessageOut,
     ChatOut,
     CreatedOut,
     HealthOut,
@@ -37,9 +38,6 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/api", generate_unique_id_function=lambda route: route.name)
-
-CONSULT_GUIDE = "치매상담콜센터(1899-9988)나 가까운 치매안심센터에서 상담을 받으실 수 있습니다."
-
 
 class LoginIn(BaseModel):
     username: str
@@ -160,6 +158,7 @@ async def add_observation(resident_id: int, body: ObservationIn, user: User = De
                       text=body.text)
     db.add(obs)
     await db.commit()
+    await notify_resident("observation.created", {"observation_id": obs.id}, resident_id)
     return CreatedOut(id=obs.id)
 
 
@@ -193,15 +192,17 @@ async def chat(body: ChatIn, user: User = Depends(current_user), db: AsyncSessio
     db.add(Observation(resident_id=resident.id, source=ObservationSource(user.role.value), author_id=user.id,
                        text=f"챗봇 질문: {body.message}"))
     await db.commit()
-    recent = [s for s in await resident_sessions(db, resident.id) if s.trials][-4:]
-    costs = [session_summary(s).dual_task_cost.animals for s in recent]
-    trend_text = ", ".join(f"{c}%" for c in costs if c is not None) or "아직 기록이 부족합니다"
-    reply = (
-        f"말씀하신 내용은 관찰 기록으로 남겨 다음 검사 계획에 반영하겠습니다. "
-        f"이 서비스는 진단을 하지 않습니다. 최근 걷기 검사의 이중과제 비용은 {trend_text}입니다. "
-        f"{CONSULT_GUIDE} 언제부터, 얼마나 자주 그런 모습이 보이셨나요?"
-    )
-    return ChatOut(reply=reply, generated_at=datetime.now().astimezone(), mock=True)
+    reply = await chatbot.answer(db, resident, user.id, body.message)
+    return ChatOut(reply=reply.text, generated_at=reply.created_at, mock=reply.mock)
+
+
+@router.get("/residents/{resident_id}/chat", tags=["chat"])
+async def list_chat_messages(resident_id: int, user: User = Depends(current_user),
+                             db: AsyncSession = Depends(get_db)) -> list[ChatMessageOut]:
+    """로그인한 계정이 이 어르신에 대해 나눈 대화(오래된 순). 다른 계정의 대화는 보이지 않는다."""
+    await _visible_resident(db, resident_id, user)
+    return [ChatMessageOut(id=m.id, role=m.role, text=m.text, mock=m.mock, created_at=m.created_at)
+            for m in await chatbot.history(db, resident_id, user.id)]
 
 
 @router.post("/dev/sessions/start", tags=["dev"])

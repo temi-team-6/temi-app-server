@@ -165,12 +165,25 @@ class AgentRequest(Base):
     priority: Mapped[Priority] = mapped_column(_enum(Priority), default=Priority.NORMAL)
     topic: Mapped[str] = mapped_column(String(50))
     text: Mapped[str] = mapped_column(Text)
+    explanation: Mapped[str | None] = mapped_column(Text)
     options: Mapped[list[str]] = mapped_column(JSON, default=list)
     status: Mapped[RequestStatus] = mapped_column(_enum(RequestStatus), default=RequestStatus.PENDING)
     answer: Mapped[str | None] = mapped_column(Text)
     answered_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    resident_id: Mapped[int] = mapped_column(ForeignKey("residents.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    text: Mapped[str] = mapped_column(Text)
+    mock: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Observation(Base):

@@ -1,4 +1,5 @@
 import statistics
+from collections import Counter
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Literal
@@ -68,6 +69,11 @@ def rt_stats(rt_ms: list[float], correct: list[bool]) -> dict[str, float | None]
         "rt_mean_ms": round(statistics.fmean(hits), 1) if hits else None,
         "rt_sd_ms": round(statistics.stdev(hits), 1) if len(hits) >= 2 else None,
     }
+
+
+def usual_time_of_day(times: Iterable[TimeOfDay]) -> TimeOfDay | None:
+    counts = Counter(times).most_common(1)
+    return counts[0][0] if counts else None
 
 
 def time_of_day(dt: datetime) -> TimeOfDay:

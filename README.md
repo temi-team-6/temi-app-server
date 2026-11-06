@@ -39,6 +39,18 @@ uv run poe             # 명령 목록
 - **API·메시지 형식(계약):** 바꾸면 `schemas.py`/`protocol.py`와 `docs/protocol.md`를 같은 PR에서 고친다. 기존 경로·필드는 지우거나 바꾸지 않고 추가만 한다. 앱이 아는 필드가 사라지면 앱이 깨진다.
 - **LLM:** Claude 호출은 `app/llm.py`의 `complete()`만 쓴다. `None`이 오면(키 없음·실패·시간 초과) 기존 규칙 응답으로 진행한다. 안전 신호 처리에는 쓰지 않는다. 테스트는 키 없이 돈다.
 
+## 계정·어르신 관리
+
+공개 회원가입은 없다. 운영자가 서버에서 명령으로 만든다. 어르신 한 명에 보호자는 한 명이고, 다시 연결하면 보호자가 바뀐다.
+
+```bash
+docker compose exec api python -m app.manage list
+docker compose exec api python -m app.manage create-resident --name C --rfid RFID-C-0003 --birth-year 1950
+docker compose exec api python -m app.manage create-user --username guardian_c --name "C 보호자" --role guardian --password <8자 이상> --resident-id 3
+docker compose exec api python -m app.manage create-user --username staff3 --name "요양사 박" --role staff --password <8자 이상> --call-priority 3
+docker compose exec api python -m app.manage link-guardian --resident-id 3 --guardian guardian_c
+```
+
 ## 배포
 
 운영 VM에서 `scripts/deploy.sh`를 실행한다. `main`을 받아 다시 빌드하고, `/api/health`의 `commit`이 새 커밋으로 바뀐 것을 확인한다. 지금 배포된 커밋은 `curl https://temi.hylink.kr/api/health`로 본다.
@@ -137,7 +149,10 @@ server/app/
     walk.py      보행 검사 진행, 재측정, 기준선 비교
     care.py      검사 중 발화, 안전 신호, 영상통화, 게임
     guardian.py  앱 답변 처리와 보호자 답변 판단
-  llm.py       Claude 호출 (실패하면 None → 규칙 응답)
+  llm.py       Claude 호출과 분류 (실패하면 None → 규칙 응답)
+  chat.py      보호자 챗봇 (추세·관찰 기록 근거, 대화 이력)
+  events.py    어르신별 앱 이벤트 전송 (관찰 기록, 검사 종료)
+  manage.py    운영자용 계정·어르신 관리 명령
   analysis.py  무효 판정, 이중과제 비용, 기준선 비교
   protocol.py  메시지 봉투와 payload 스키마
   models.py    DB 모델

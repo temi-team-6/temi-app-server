@@ -143,16 +143,18 @@ class VirtualDevices:
 
     async def _walk(self, trial_id: int, result: Message) -> None:
         if self.pace > 0:
-            duration = result.get("duration_s") or 3.5
-            ticks = max(int(duration / 0.25), 1)
-            for i in range(1, ticks + 1):
+            speed = result.get("speed_mps") or 1.0
+            duration = COURSE_M / speed + (1.5 if result.get("stopped") else 0.0)
+            ticks = max(int(duration / 0.1), 1)
+            for i in range(1, ticks):
                 await self._pause(duration / ticks)
-                if not self.attached("pi") or i == ticks:
-                    break
-                position = COURSE_M * i / ticks
+                if not self.attached("pi"):
+                    return
+                position = min(speed * duration * i / ticks, COURSE_M)
                 if result.get("stopped") and position > COURSE_M / 2:
-                    position = COURSE_M / 2
+                    position = max(COURSE_M / 2, position - 1.5 * speed)
                 await self.send("pi", "trial.progress", {"trial_id": trial_id, "position_m": round(position, 2)})
+            await self._pause(duration / ticks)
         if self.attached("pi"):
             await self.send("pi", "trial.completed", {"trial_id": trial_id, **result})
 

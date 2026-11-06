@@ -23,7 +23,7 @@ class JsonSocket(Protocol):
 
 def _empty_world() -> dict[str, Any]:
     return {
-        "temi": {"location": "보행_대기", "target": None, "screen": "idle", "saying": None, "heard": None, "call": None},
+        "temi": {"location": "보행_측정", "target": None, "screen": "idle", "saying": None, "heard": None, "call": None},
         "session_id": None,
         "person": None,
         "game": None,

@@ -66,12 +66,17 @@ svg.map { width: 100%; height: auto; display: block; background: var(--surface-2
 .map .line { stroke: var(--ink-2); stroke-width: 3; }
 .map text { fill: var(--ink-2); font-size: 12px; }
 .map .slot { fill: none; stroke: var(--muted); stroke-dasharray: 3 3; }
-.map .temi circle { fill: var(--temi); }
-.map .temi text { fill: var(--accent-ink); font-weight: 700; font-size: 13px; }
+.map .temi .body { fill: var(--temi); }
+.map .temi .screen { fill: var(--surface); }
+.map .temi .cam { fill: var(--ink); }
+.map .label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.map .sub { fill: var(--ink-2); font-size: 11px; }
 .map .moving { transition: transform .8s ease; }
-.map .person { transition: transform .25s linear; }
-.map .person circle { fill: var(--person); }
-.map .person[data-phase="aborted"] circle, .map .person[data-phase="approaching"] circle { fill: var(--muted); }
+.map .person { transition: transform .1s linear; }
+.map .person .fig { fill: var(--person); }
+.map .person[data-phase="aborted"] .fig, .map .person[data-phase="approaching"] .fig { fill: var(--muted); }
+.map .bubble rect { fill: var(--surface); stroke: var(--temi); }
+.map .bubble text { fill: var(--ink); font-size: 11px; }
 .map .route { stroke: var(--temi); stroke-dasharray: 5 4; fill: none; }
 .map .camera { fill: var(--ink-2); }
 .map .fov { fill: color-mix(in srgb, var(--ink-2) 8%, transparent); }
@@ -122,6 +127,7 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
     <span class="chip" id="chipTemi" data-mode="offline">Temi 끊김</span>
     <span class="chip" id="chipPi" data-mode="offline">Pi 끊김</span>
     <span class="chip" id="chipApps">앱 0</span>
+    <button type="button" id="voice" aria-pressed="false">Temi 음성 켜기</button>
     <button type="button" id="logout">로그아웃</button>
   </div>
 </header>
@@ -178,19 +184,28 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
       <div class="map-wrap">
         <svg class="map" viewBox="0 0 640 300" role="img" aria-label="실습실 2D 지도: 4m 보행 구간, Temi와 참가자 위치">
           <rect class="room" x="10" y="10" width="620" height="280" rx="10"></rect>
-          <polygon class="fov" points="320,262 110,150 530,150"></polygon>
+          <polygon class="fov hidden" id="fov"></polygon>
           <line class="lane" x1="120" y1="170" x2="520" y2="170"></line>
           <line class="line" x1="120" y1="140" x2="120" y2="200"></line>
           <line class="line" x1="520" y1="140" x2="520" y2="200"></line>
           <text x="120" y="222" text-anchor="middle">시작선</text>
           <text x="520" y="222" text-anchor="middle">끝선</text>
-          <text x="320" y="135" text-anchor="middle">4 m</text>
-          <rect class="camera" x="306" y="256" width="28" height="16" rx="3"></rect>
-          <text x="320" y="288" text-anchor="middle">Pi 카메라</text>
+          <text x="320" y="112" text-anchor="middle">4 m</text>
           <g id="slots"></g>
           <path class="route hidden" id="route"></path>
-          <g class="person hidden" id="person"><circle r="11"></circle></g>
-          <g class="temi moving" id="temi"><circle r="17"></circle><text text-anchor="middle" dy="4.5">T</text></g>
+          <g class="person hidden" id="person">
+            <circle class="fig" cy="-30" r="7"></circle>
+            <path class="fig" d="M-9 -20 h18 v16 h-5 v14 h-8 v-14 h-5 z"></path>
+            <text class="label" text-anchor="middle" y="26" id="personName"></text>
+            <text class="sub" text-anchor="middle" y="40" id="personState"></text>
+          </g>
+          <g class="temi moving" id="temi">
+            <rect class="body" x="-15" y="-22" width="30" height="40" rx="12"></rect>
+            <rect class="screen" x="-10" y="-17" width="20" height="12" rx="3"></rect>
+            <rect class="cam" x="-6" y="-29" width="12" height="7" rx="2"><title>Pi 카메라</title></rect>
+            <text class="label" text-anchor="middle" y="32">Temi + Pi</text>
+          </g>
+          <g class="bubble hidden" id="bubble"><rect rx="6" height="22"></rect><text x="8" y="15"></text></g>
         </svg>
       </div>
       <dl class="state" id="state"></dl>
@@ -219,7 +234,22 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
 
 <script>
 const $ = (id) => document.getElementById(id);
-const SLOTS = { "보행_대기": [60, 75], "보행_시작": [175, 95], "보행_끝": [520, 95] };
+const SLOTS = { "보행_측정": [320, 250], "보행_시작": [70, 90], "보행_끝": [570, 90] };
+const PHASE_SHORT = { approaching: "시작선으로", ready: "출발 대기", walking: "걷는 중", done: "도착", aborted: "측정 취소" };
+let voices = {}, voiceOn = false, voiceQueue = [], voicePlaying = false;
+fetch("voice/manifest.json").then((r) => r.ok ? r.json() : {}).then((m) => { voices = m; });
+function playNext() {
+  if (voicePlaying || !voiceQueue.length) return;
+  voicePlaying = true;
+  const audio = new Audio(`voice/${voiceQueue.shift()}`);
+  audio.onended = audio.onerror = () => { voicePlaying = false; playNext(); };
+  audio.play().catch(() => { voicePlaying = false; playNext(); });
+}
+function speakTemi(entry) {
+  const file = voiceOn && entry.peer === "temi" && entry.dir === "out"
+    && (entry.type === "temi.say" || entry.type === "temi.ask") && voices[entry.payload.text];
+  if (file) { voiceQueue.push(file); playNext(); }
+}
 const COURSE = { x0: 120, x1: 520, y: 170, meters: 4 };
 const CONDITION = { single: "그냥 걷기", animals: "동물 이름 말하며", countdown: "숫자 거꾸로 세며" };
 const MODE = { walk: "보행 검사", pain_check: "통증 확인", video_call: "영상통화", game: "게임" };
@@ -272,7 +302,7 @@ function connect() {
     const msg = JSON.parse(e.data);
     if (msg.kind === "pong") return;
     if (msg.kind === "hello") { entries = msg.log.slice().reverse(); renderTimeline(); renderRequests(); }
-    if (msg.kind === "event") { entries.unshift(msg.entry); entries.length = Math.min(entries.length, 400); renderTimeline(); renderRequests(); }
+    if (msg.kind === "event") { speakTemi(msg.entry); entries.unshift(msg.entry); entries.length = Math.min(entries.length, 400); renderTimeline(); renderRequests(); }
     render(msg);
   };
 }
@@ -328,6 +358,11 @@ $("speechForm").onsubmit = (e) => { e.preventDefault(); const t = $("speech").va
 document.querySelectorAll("[data-call]").forEach((b) => {
   b.onclick = () => act(() => api("/api/twin/temi/call", { method: "POST", body: JSON.stringify({ answered: b.dataset.call === "true" }) }));
 });
+$("voice").onclick = () => {
+  voiceOn = !voiceOn; voiceQueue = [];
+  $("voice").setAttribute("aria-pressed", String(voiceOn));
+  $("voice").textContent = voiceOn ? "Temi 음성 끄기" : "Temi 음성 켜기";
+};
 $("gameDone").onclick = () => act(() => api("/api/twin/pi/game", { method: "POST" }));
 $("stop").onclick = () => act(() => api("/api/twin/stop", { method: "POST" }));
 
@@ -336,7 +371,7 @@ function deviceChip(id, name, mode) {
   el.textContent = `${name} ${{ real: "실제", virtual: "가상", offline: "끊김" }[mode]}`;
 }
 
-function slot(name) { return SLOTS[name] || SLOTS["보행_대기"]; }
+function slot(name) { return SLOTS[name] || SLOTS["보행_측정"]; }
 
 function render(msg) {
   const { agent, devices, world } = msg;
@@ -358,7 +393,23 @@ function render(msg) {
   if (person && person.position_m !== null && person.position_m !== undefined) {
     const x = COURSE.x0 + (COURSE.x1 - COURSE.x0) * person.position_m / COURSE.meters;
     dot.setAttribute("transform", `translate(${x} ${COURSE.y})`); dot.dataset.phase = person.phase; dot.classList.remove("hidden");
+    $("personName").textContent = agent?.resident_name ? `${agent.resident_name}님` : "참가자";
+    $("personState").textContent = `${PHASE_SHORT[person.phase] || ""}${person.position_m > 0 ? ` ${person.position_m.toFixed(1)} m` : ""}`;
   } else dot.classList.add("hidden");
+  const fov = $("fov");
+  if (world.temi.location === "보행_측정" && !world.temi.target) {
+    fov.setAttribute("points", `${tx},${ty - 26} ${COURSE.x0 - 10},${COURSE.y - 20} ${COURSE.x1 + 10},${COURSE.y - 20}`); fov.classList.remove("hidden");
+  } else fov.classList.add("hidden");
+  const bubble = $("bubble"), saying = world.temi.saying;
+  if (saying) {
+    const text = saying.length > 20 ? `${saying.slice(0, 20)}…` : saying;
+    bubble.querySelector("text").textContent = text;
+    const w = 12 * text.length + 16;
+    bubble.querySelector("rect").setAttribute("width", w);
+    const bx = tx + 26 + w <= 626 ? tx + 26 : tx - 26 - w;
+    bubble.setAttribute("transform", `translate(${bx} ${ty - 11})`);
+    bubble.classList.remove("hidden");
+  } else bubble.classList.add("hidden");
   $("saying").textContent = world.temi.saying || "-";
   $("heard").textContent = world.temi.heard || "-";
 
@@ -428,7 +479,8 @@ for (const [name, [x, y]] of Object.entries(SLOTS)) {
   c.setAttribute("class", "slot"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 21);
   const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
   t.setAttribute("x", x); t.setAttribute("y", y - 28); t.setAttribute("text-anchor", "middle"); t.textContent = name;
-  slots.append(c, t);
+  slots.append(c);
+  if (name !== "보행_측정") slots.append(t);
 }
 
 if (token) start(); else showLogin();

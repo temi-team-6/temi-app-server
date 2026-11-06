@@ -7,9 +7,12 @@
 - guardian.py: 앱 답변 처리와 보호자 답변 판단
 """
 
+from typing import Any
+
 from pydantic import BaseModel, ValidationError
 
 from ..hub import hub
+from ..models import SessionStatus
 from ..protocol import (
     EVENT_PAYLOADS,
     Arrived,
@@ -21,10 +24,12 @@ from ..protocol import (
     SayDone,
     SpeechHeard,
     TrialCompleted,
+    TrialProgress,
     TrialReady,
     VideoCallResult,
     make,
 )
+from ..twin.monitor import monitor
 from .core import log
 from .guardian import GuardianFlow
 
@@ -32,7 +37,39 @@ from .guardian import GuardianFlow
 class Agent(GuardianFlow):
     """규칙 기반 임시 에이전트. 이벤트 입출력은 실제 LLM 에이전트와 같고, 판단만 고정 규칙이다."""
 
+    def snapshot(self) -> dict[str, Any]:
+        """트윈 상태판에 보여 줄 진행 중인 검사의 단계."""
+        st = self.state
+        if st is None:
+            return {"active": False}
+        if st.awaiting_say is not None and not st.said.is_set():
+            waiting = "say_done"
+        elif st.trial_id is not None and not st.ready.is_set():
+            waiting = "trial.ready"
+        else:
+            waiting = None
+        return {
+            "active": True,
+            "session_id": st.session_id,
+            "resident_id": st.resident_id,
+            "resident_name": st.resident_name,
+            "mode": st.mode,
+            "step": st.step,
+            "trial_id": st.trial_id,
+            "condition": st.trial_condition,
+            "confirmed": st.confirmed,
+            "waiting": waiting,
+            "call_queue": [name for _, name in st.call_queue],
+        }
+
+    async def abort_session(self, reason: str) -> None:
+        if self.state is None:
+            return
+        await self._abort_trial(reason)
+        await self._finish(SessionStatus.ABORTED, reason)
+
     async def handle(self, device: str, env: Envelope) -> None:
+        await monitor.record("in", device, env.model_dump(mode="json"))
         if env.type == "ping":
             await hub.send_device(device, make("pong", reply_to=env.id))
             return
@@ -66,6 +103,10 @@ class Agent(GuardianFlow):
                 log.info("temi arrived at %s", payload.location)
             case GotoFailed():
                 log.warning("temi failed to reach %s: %s", payload.location, payload.reason)
+            case TrialProgress():
+                pass
+        await monitor.broadcast()
 
 
 agent = Agent()
+monitor.state_provider = agent.snapshot

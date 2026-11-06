@@ -98,6 +98,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 |---|---|---|
 | `rfid.scanned` | `{tag}` | 카드가 찍혔을 때. 서버가 검사를 시작한다 |
 | `trial.ready` | `{trial_id}` | `trial.start` 후 시작선 앞에 사람이 한 명 보일 때. 한 번만 보내면 된다 |
+| `trial.progress` | `{trial_id, position_m}` | 선택. 걷는 동안 시작선에서부터 간 거리(m, 0~4)를 초당 몇 번 보낸다. 트윈 지도에만 쓰고 판정에는 쓰지 않는다. 발목 x 픽셀을 시작선·끝선 픽셀 사이로 비례시키면 된다 |
 | `trial.completed` | 아래 표 | 측정이 끝났을 때. 측정 실패도 보낸다(`speed_mps: null`) |
 | `game.completed` | `{game_id, rt_ms[], correct[], raw?}` | 버튼 패드 게임이 끝났을 때. 두 배열 길이는 같아야 한다 |
 | `safety.alert` | `{kind, detail?}` | 주저앉음 등 안전 신호. `kind`: `fall` |
@@ -276,6 +277,6 @@ A·B 모두 지난 3주 동안 월·수·금 오전에 검사한 가상 기록�
 
 ## 10. 담당별 시작점
 
-- **Pi + Arduino:** `/ws/device`에 Pi 토큰으로 연결한다. `rfid.scanned`, `trial.start`→`trial.ready`→`trial.go`→`trial.completed`, `game.start`→`game.completed`, `safety.alert` 순서로 붙인다. 시뮬레이터의 Pi 패널이 같은 메시지를 보내니 형식을 비교할 수 있다.
-- **보호자·요양사 앱:** 로그인 → `/ws/app` 연결 → `GET /api/requests`로 요청 화면, `GET /api/residents/{id}/trend`로 리포트 화면. 시뮬레이터로 검사를 돌리면 요청이 실제로 들어온다.
-- **Temi 앱:** 시뮬레이터의 Temi 패널이 Temi 앱과 같은 역할을 한다. `temi.say`마다 TTS가 끝나면 `temi.say_done`을 보내는 것이 필수다. 실제 앱은 이 패널의 동작을 Temi SDK 호출로 바꾸면 된다.
+- **Pi + Arduino:** `/ws/device`에 Pi 토큰으로 연결한다. `rfid.scanned`, `trial.start`→`trial.ready`→`trial.go`→`trial.completed`, `game.start`→`game.completed`, `safety.alert` 순서로 붙인다. 트윈(`/twin/`)의 가상 Pi가 같은 메시지를 보내고, 상태판에서 실제 Pi가 보낸 메시지를 비교할 수 있다.
+- **보호자·요양사 앱:** 로그인 → `/ws/app` 연결 → `GET /api/requests`로 요청 화면, `GET /api/residents/{id}/trend`로 리포트 화면. 트윈에서 시나리오를 돌리면 요청이 실제로 들어온다.
+- **Temi 앱:** 트윈의 가상 Temi(`app/twin/devices.py`)가 Temi 앱과 같은 역할을 한다. `temi.say`마다 TTS가 끝나면 `temi.say_done`을 보내는 것이 필수다. 실제 Temi를 붙이고 트윈에서 가상 Pi로 보행 시나리오를 돌리면 Temi만 따로 검증할 수 있다.

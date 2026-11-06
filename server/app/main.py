@@ -16,9 +16,11 @@ from .auth import device_from_token, user_id_from_token
 from .config import settings
 from .db import SessionLocal, engine
 from .hub import AppClient, hub
-from .models import User
+from .models import Role, User
 from .protocol import Envelope, make
 from .seed import seed_if_empty
+from .twin.api import router as twin_router
+from .twin.monitor import monitor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("temi")
@@ -39,12 +41,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
-app.mount("/sim", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="sim")
+app.include_router(twin_router)
+app.mount("/twin", StaticFiles(directory=Path(__file__).parent / "static" / "twin", html=True), name="twin")
 
 
 @app.get("/", include_in_schema=False)
 async def root() -> RedirectResponse:
     return RedirectResponse("/docs")
+
+
+@app.get("/sim/", include_in_schema=False)
+async def old_simulator() -> RedirectResponse:
+    return RedirectResponse("/twin/")
 
 
 @app.websocket("/ws/device")
@@ -59,6 +67,7 @@ async def device_ws(ws: WebSocket, token: str) -> None:
         await previous.close(code=status.WS_1012_SERVICE_RESTART)
     hub.devices[device] = ws
     log.info("device connected: %s", device)
+    await monitor.broadcast()
     await ws.send_json(make("hello", {"device": device}))
     try:
         while True:
@@ -76,6 +85,7 @@ async def device_ws(ws: WebSocket, token: str) -> None:
         if hub.devices.get(device) is ws:
             del hub.devices[device]
         log.info("device disconnected: %s", device)
+        await monitor.broadcast()
 
 
 @app.websocket("/ws/app")
@@ -103,3 +113,30 @@ async def app_ws(ws: WebSocket, token: str) -> None:
         pass
     finally:
         hub.apps.discard(client)
+
+
+@app.websocket("/ws/monitor")
+async def monitor_ws(ws: WebSocket, token: str) -> None:
+    """트윈 상태판용(요양사 계정). 모든 기기·앱 메시지와 검사 상태를 보낸다. 보기 전용이다."""
+    try:
+        user_id = user_id_from_token(token)
+    except HTTPException:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    async with SessionLocal() as db:
+        user = await db.get(User, user_id)
+    if user is None or user.role != Role.STAFF:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    await ws.accept()
+    await ws.send_json({"kind": "hello", "log": list(monitor.log), **monitor.snapshot()})
+    monitor.clients.add(ws)
+    try:
+        while True:
+            msg = await ws.receive_json()
+            if msg.get("type") == "ping":
+                await ws.send_json({"kind": "pong"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        monitor.clients.discard(ws)

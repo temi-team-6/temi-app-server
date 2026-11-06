@@ -55,6 +55,11 @@ class TrialReady(BaseModel):
     trial_id: int
 
 
+class TrialProgress(BaseModel):
+    trial_id: int
+    position_m: float = Field(description="시작선에서부터 걸어간 거리(m). 구간 안이면 0~4")
+
+
 class SayDone(BaseModel):
     pass
 
@@ -98,6 +103,7 @@ class VideoCallResult(BaseModel):
 EVENT_PAYLOADS: dict[str, type[BaseModel]] = {
     "rfid.scanned": RfidScanned,
     "trial.ready": TrialReady,
+    "trial.progress": TrialProgress,
     "trial.completed": TrialCompleted,
     "temi.say_done": SayDone,
     "game.completed": GameCompleted,

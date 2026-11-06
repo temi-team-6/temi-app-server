@@ -14,7 +14,7 @@ async def start_first_walk(devices: FakeDevices, tag: str = "RFID-A-0001") -> No
 
 async def current_session() -> TestSession:
     async with SessionLocal() as db:
-        session = await db.scalar(select(TestSession).where(TestSession.synthetic.is_(False)))
+        session = await db.scalar(select(TestSession).order_by(TestSession.id.desc()))
     assert session is not None
     return session
 

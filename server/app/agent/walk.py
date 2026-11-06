@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from .. import analysis, llm
 from ..config import settings
 from ..db import SessionLocal
+from ..hub import hub
 from ..models import (
     Condition,
     ObservationSource,
@@ -79,14 +80,14 @@ async def explain_walk(result: dict[str, Any], confirmed: bool) -> str:
 
 
 class WalkFlow(AgentCore):
-    async def start_session(self, resident_id: int) -> int:
+    async def start_session(self, resident_id: int, *, synthetic: bool = False) -> int:
         async with SessionLocal() as db:
             resident = await db.get(Resident, resident_id)
             if resident is None:
                 raise LookupError(f"resident {resident_id} not found")
             if self.state is not None:
                 await self._finish(SessionStatus.ABORTED, "replaced_by_new_session")
-            session = TestSession(resident_id=resident.id)
+            session = TestSession(resident_id=resident.id, synthetic=synthetic)
             db.add(session)
             await db.commit()
             self.state = SessionState(session.id, resident.id, resident.name)
@@ -100,7 +101,7 @@ class WalkFlow(AgentCore):
         if resident is None:
             await self._temi("temi.say", {"text": "등록되지 않은 카드예요. 선생님께 확인해 주세요."})
             return
-        await self.start_session(resident.id)
+        await self.start_session(resident.id, synthetic=getattr(hub.devices.get("pi"), "virtual", False))
 
     async def _start_trial(self, condition: Condition, attempt: int) -> None:
         st = self._require_state()

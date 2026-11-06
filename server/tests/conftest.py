@@ -23,6 +23,7 @@ from app.hub import hub  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import TestSession, User  # noqa: E402
 from app.seed import DEV_PASSWORD, seed  # noqa: E402
+from app.twin.monitor import monitor  # noqa: E402
 
 from .fakes import FakeDevices  # noqa: E402
 
@@ -55,6 +56,7 @@ async def fresh_state(migrated_schema: None) -> AsyncIterator[None]:
     await seed()
     hub.devices.clear()
     hub.apps.clear()
+    monitor.reset()
     agent.state = None
     yield
     if agent.state is not None and agent.state.gate is not None:

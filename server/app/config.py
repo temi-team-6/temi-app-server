@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     llm_model_fast: str = "claude-haiku-5-5"
     llm_model_smart: str = "claude-sonnet-5-5"
     llm_timeout_s: float = 10.0
+    # 트윈의 가상 기기·시나리오 제어(/api/twin). 상태판 보기(/ws/monitor)는 꺼도 된다. 시연 당일에는 끈다.
+    twin_enabled: bool = False
 
 
 settings = Settings()

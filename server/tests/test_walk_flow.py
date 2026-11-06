@@ -26,7 +26,7 @@ async def test_normal_walk_completes_without_guardian_question(devices: FakeDevi
     assert len(devices.pi.of_type("trial.go")) == 3
     assert guardian_b.of_type("request.created") == []
     async with SessionLocal() as db:
-        session = await db.scalar(select(TestSession).where(TestSession.synthetic.is_(False)))
+        session = await db.scalar(select(TestSession).order_by(TestSession.id.desc()))
     assert session is not None and session.status == SessionStatus.COMPLETED
     ended = await guardian_b.wait_for("session.ended")
     assert ended["payload"]["session_id"] == session.id and ended["payload"]["status"] == "completed"

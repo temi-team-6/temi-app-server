@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Temi 트윈</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f4; --surface: #ffffff; --surface-2: #eef0ec; --line: #d9ddd6;
+  --ink: #1b2a2f; --ink-2: #56656a; --accent: #17706f; --accent-ink: #ffffff;
+  --temi: #17706f; --person: #b5531f; --warn: #a3451f; --ok: #2f7d3b; --muted: #8a9599;
+  --focus: #1f6feb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11181a; --surface: #182225; --surface-2: #1f2b2f; --line: #2e3d41;
+    --ink: #e4ecee; --ink-2: #a3b2b6; --accent: #4fb3ae; --accent-ink: #0d1517;
+    --temi: #4fb3ae; --person: #f08a4b; --warn: #f08a4b; --ok: #6cc47a; --muted: #6f7f84;
+    --focus: #79b8ff;
+  }
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); color: var(--ink); }
+body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+button, input, select { font: inherit; color: inherit; }
+button {
+  min-height: 32px; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--surface-2); }
+button:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, var(--ink)); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input { min-height: 32px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 13px; margin: 0 0 8px; color: var(--ink-2); font-weight: 600; letter-spacing: .02em; }
+.hidden { display: none !important; }
+
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+.chip { padding: 2px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.chip[data-mode="real"] { background: color-mix(in srgb, var(--ok) 18%, var(--surface)); color: var(--ink); }
+.chip[data-mode="virtual"] { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--ink); }
+.chip[data-mode="offline"] { color: var(--muted); }
+
+main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; gap: 16px; padding: 16px 20px; align-items: start; }
+@media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.notice { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
+
+.scenarios { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.scenarios button { width: 100%; text-align: left; padding: 8px 10px; display: block; }
+.scenarios small { display: block; color: var(--ink-2); font-size: 12px; }
+.scenarios button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+
+.map-wrap { position: relative; }
+svg.map { width: 100%; height: auto; display: block; background: var(--surface-2); border-radius: 8px; }
+.map .room { fill: none; stroke: var(--line); stroke-width: 2; }
+.map .lane { stroke: var(--line); stroke-width: 26; stroke-linecap: round; }
+.map .line { stroke: var(--ink-2); stroke-width: 3; }
+.map text { fill: var(--ink-2); font-size: 12px; }
+.map .slot { fill: none; stroke: var(--muted); stroke-dasharray: 3 3; }
+.map .temi circle { fill: var(--temi); }
+.map .temi text { fill: var(--accent-ink); font-weight: 700; font-size: 13px; }
+.map .moving { transition: transform .8s ease; }
+.map .person { transition: transform .25s linear; }
+.map .person circle { fill: var(--person); }
+.map .person[data-phase="aborted"] circle, .map .person[data-phase="approaching"] circle { fill: var(--muted); }
+.map .route { stroke: var(--temi); stroke-dasharray: 5 4; fill: none; }
+.map .camera { fill: var(--ink-2); }
+.map .fov { fill: color-mix(in srgb, var(--ink-2) 8%, transparent); }
+@media (prefers-reduced-motion: reduce) { .map .moving, .map .person { transition: none; } }
+
+dl.state { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 12px 0 0; }
+dl.state dt { color: var(--ink-2); }
+dl.state dd { margin: 0; font-variant-numeric: tabular-nums; }
+.speech { margin-top: 12px; display: grid; gap: 6px; }
+.speech p { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.speech b { color: var(--ink-2); font-weight: 600; margin-right: 6px; }
+
+.timeline { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; font-size: 12px; }
+.timeline li { display: grid; grid-template-columns: 62px 56px 1fr; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.timeline .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+.timeline .peer { color: var(--ink-2); }
+.timeline .type { font-weight: 600; }
+.timeline .in .type { color: var(--person); }
+.timeline .out .type { color: var(--temi); }
+.timeline .payload { grid-column: 3; color: var(--ink-2); word-break: break-all; }
+.timeline .dropped { opacity: .5; }
+.filters { display: flex; gap: 16px; margin-bottom: 8px; font-size: 12px; color: var(--ink-2); }
+.filters label { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; cursor: pointer; }
+.filters input { margin: 0; }
+.requests { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.requests li { padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.requests .meta { font-size: 12px; color: var(--ink-2); }
+.requests .why { margin-top: 4px; font-size: 13px; color: var(--ink-2); }
+.empty { color: var(--muted); margin: 0; }
+form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
+</style>
+</head>
+<body>
+<form class="login hidden" id="login">
+  <h1>Temi 트윈</h1>
+  <p class="empty">요양사 계정으로 로그인합니다.</p>
+  <input id="user" value="staff1" autocomplete="username" aria-label="아이디">
+  <input id="pw" type="password" value="temi1234" autocomplete="current-password" aria-label="비밀번호">
+  <button class="primary" type="submit">로그인</button>
+  <p class="notice hidden" id="loginError"></p>
+</form>
+
+<div id="app" class="hidden">
+<header>
+  <h1>Temi 트윈</h1>
+  <div class="chips" aria-live="polite">
+    <span class="chip" id="chipMonitor">상태판 연결 중</span>
+    <span class="chip" id="chipTemi" data-mode="offline">Temi 끊김</span>
+    <span class="chip" id="chipPi" data-mode="offline">Pi 끊김</span>
+    <span class="chip" id="chipApps">앱 0</span>
+    <button type="button" id="logout">로그아웃</button>
+  </div>
+</header>
+
+<main>
+  <div class="stack">
+    <section>
+      <h2>시나리오</h2>
+      <p class="notice hidden" id="twinOff">이 서버에서는 시나리오와 가상 기기를 끈 상태입니다(TWIN_ENABLED=false). 상태판은 볼 수 있습니다.</p>
+      <ul class="scenarios" id="scenarios"></ul>
+      <div class="row" style="margin-top:10px">
+        <button type="button" id="stop">중지하고 검사 종료</button>
+      </div>
+      <p class="notice hidden" id="scenarioError" style="margin-top:10px"></p>
+    </section>
+    <section>
+      <h2>가상 기기</h2>
+      <div class="row">
+        <button type="button" data-device="temi" aria-pressed="false">가상 Temi</button>
+        <button type="button" data-device="pi" aria-pressed="false">가상 Pi</button>
+      </div>
+    </section>
+    <section>
+      <h2>직접 조작</h2>
+      <div class="stack" style="gap:10px">
+        <div class="row">
+          <button type="button" data-rfid="RFID-A-0001">A 카드</button>
+          <button type="button" data-rfid="RFID-B-0002">B 카드</button>
+          <button type="button" data-rfid="UNKNOWN">미등록 카드</button>
+        </div>
+        <form class="row" id="speechForm">
+          <input id="speech" placeholder="참가자가 한 말" style="flex:1; min-width:0" aria-label="참가자가 한 말">
+          <button type="submit">말하기</button>
+        </form>
+        <div class="row">
+          <button type="button" data-say="아무 동물이나 돼요?">질문</button>
+          <button type="button" data-say="다리가 아파요">통증</button>
+          <button type="button" data-say="일어설 수가 없어">심함</button>
+          <button type="button" data-say="조금 시큰거려요">가벼움</button>
+          <button type="button" data-say="오늘은 하기 싫어">거부</button>
+        </div>
+        <div class="row">
+          <button type="button" data-call="true">통화 받음</button>
+          <button type="button" data-call="false">통화 안 받음</button>
+          <button type="button" id="gameDone">게임 결과 보내기</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section>
+      <h2>실습실</h2>
+      <div class="map-wrap">
+        <svg class="map" viewBox="0 0 640 300" role="img" aria-label="실습실 2D 지도: 4m 보행 구간, Temi와 참가자 위치">
+          <rect class="room" x="10" y="10" width="620" height="280" rx="10"></rect>
+          <polygon class="fov" points="320,262 110,150 530,150"></polygon>
+          <line class="lane" x1="120" y1="170" x2="520" y2="170"></line>
+          <line class="line" x1="120" y1="140" x2="120" y2="200"></line>
+          <line class="line" x1="520" y1="140" x2="520" y2="200"></line>
+          <text x="120" y="222" text-anchor="middle">시작선</text>
+          <text x="520" y="222" text-anchor="middle">끝선</text>
+          <text x="320" y="135" text-anchor="middle">4 m</text>
+          <rect class="camera" x="306" y="256" width="28" height="16" rx="3"></rect>
+          <text x="320" y="288" text-anchor="middle">Pi 카메라</text>
+          <g id="slots"></g>
+          <path class="route hidden" id="route"></path>
+          <g class="person hidden" id="person"><circle r="11"></circle></g>
+          <g class="temi moving" id="temi"><circle r="17"></circle><text text-anchor="middle" dy="4.5">T</text></g>
+        </svg>
+      </div>
+      <dl class="state" id="state"></dl>
+      <div class="speech">
+        <p><b>Temi</b><span id="saying">-</span></p>
+        <p><b>참가자</b><span id="heard">-</span></p>
+      </div>
+    </section>
+    <section>
+      <h2>앱으로 간 요청</h2>
+      <ul class="requests" id="requests"><li class="empty">아직 없습니다.</li></ul>
+    </section>
+  </div>
+
+  <section>
+    <h2>메시지</h2>
+    <div class="filters">
+      <label><input type="checkbox" data-filter="temi" checked> Temi</label>
+      <label><input type="checkbox" data-filter="pi" checked> Pi</label>
+      <label><input type="checkbox" data-filter="app" checked> 앱</label>
+    </div>
+    <ol class="timeline" id="timeline"></ol>
+  </section>
+</main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SLOTS = { "보행_대기": [60, 75], "보행_시작": [175, 95], "보행_끝": [520, 95] };
+const COURSE = { x0: 120, x1: 520, y: 170, meters: 4 };
+const CONDITION = { single: "그냥 걷기", animals: "동물 이름 말하며", countdown: "숫자 거꾸로 세며" };
+const MODE = { walk: "보행 검사", pain_check: "통증 확인", video_call: "영상통화", game: "게임" };
+const PHASE = { approaching: "시작선으로 이동", ready: "시작선 앞", walking: "걷는 중", done: "도착", aborted: "측정 취소" };
+let token = sessionStorage.getItem("twinToken");
+let ws = null, pingTimer = null, entries = [], twinEnabled = false;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { "content-type": "application/json", authorization: `Bearer ${token}` } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.detail || `${res.status}`), { status: res.status });
+  return body;
+}
+
+function showLogin(message) {
+  $("app").classList.add("hidden"); $("login").classList.remove("hidden");
+  $("loginError").textContent = message || ""; $("loginError").classList.toggle("hidden", !message);
+}
+
+$("login").onsubmit = async (e) => {
+  e.preventDefault();
+  const res = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: $("user").value, password: $("pw").value }) });
+  if (!res.ok) return showLogin("아이디 또는 비밀번호를 확인하세요.");
+  const out = await res.json();
+  if (out.user.role !== "staff") return showLogin("요양사 계정만 쓸 수 있습니다.");
+  token = out.access_token; sessionStorage.setItem("twinToken", token); start();
+};
+$("logout").onclick = () => { sessionStorage.removeItem("twinToken"); ws?.close(); location.reload(); };
+
+function start() {
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  connect(); refreshStatus();
+}
+
+function connect() {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${scheme}://${location.host}/ws/monitor?token=${token}`);
+  ws.onopen = () => {
+    $("chipMonitor").textContent = "상태판 연결됨";
+    clearInterval(pingTimer); pingTimer = setInterval(() => ws.readyState === 1 && ws.send('{"type":"ping"}'), 25000);
+  };
+  ws.onclose = (e) => {
+    $("chipMonitor").textContent = "상태판 재연결 중";
+    clearInterval(pingTimer);
+    if (e.code === 1008) return showLogin("로그인이 만료되었거나 요양사 계정이 아닙니다.");
+    setTimeout(connect, 2000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.kind === "pong") return;
+    if (msg.kind === "hello") { entries = msg.log.slice().reverse(); renderTimeline(); renderRequests(); }
+    if (msg.kind === "event") { entries.unshift(msg.entry); entries.length = Math.min(entries.length, 400); renderTimeline(); renderRequests(); }
+    render(msg);
+  };
+}
+
+async function refreshStatus() {
+  try {
+    const status = await api("/api/twin/status");
+    twinEnabled = true; $("twinOff").classList.add("hidden");
+    renderScenarios(status);
+  } catch (err) {
+    if (err.status === 401) return showLogin("다시 로그인하세요.");
+    twinEnabled = false; $("twinOff").classList.remove("hidden");
+    renderScenarios({ scenarios: [], running: null });
+  }
+  document.querySelectorAll("[data-device],[data-rfid],[data-say],[data-call],#gameDone,#stop,#speechForm button")
+    .forEach((b) => { b.disabled = !twinEnabled; });
+}
+
+function renderScenarios(status) {
+  const list = $("scenarios"); list.replaceChildren();
+  for (const s of status.scenarios) {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button"; b.setAttribute("aria-pressed", String(status.running === s.id));
+    b.disabled = !!status.running;
+    const title = document.createElement("span"); title.textContent = s.title;
+    const desc = document.createElement("small"); desc.textContent = s.description;
+    b.append(title, desc);
+    b.onclick = () => act(() => api(`/api/twin/scenarios/${s.id}`, { method: "POST" }));
+    li.append(b); list.append(li);
+  }
+  $("scenarioError").textContent = status.last_error || "";
+  $("scenarioError").classList.toggle("hidden", !status.last_error);
+}
+
+async function act(fn) {
+  try { renderScenarios(await fn()); }
+  catch (err) { $("scenarioError").textContent = err.message; $("scenarioError").classList.remove("hidden"); }
+}
+
+document.querySelectorAll("[data-device]").forEach((b) => {
+  b.onclick = () => act(() => api(`/api/twin/devices/${b.dataset.device}`,
+    { method: "POST", body: JSON.stringify({ virtual: b.getAttribute("aria-pressed") !== "true" }) }));
+});
+document.querySelectorAll("[data-rfid]").forEach((b) => {
+  b.onclick = () => act(() => api("/api/twin/pi/rfid", { method: "POST", body: JSON.stringify({ tag: b.dataset.rfid }) }));
+});
+function speak(text) {
+  const ask = entries.find((e) => e.peer === "temi" && e.type === "temi.ask");
+  return act(() => api("/api/twin/temi/speech", { method: "POST", body: JSON.stringify({ text, reply_to: ask?.id ?? null }) }));
+}
+document.querySelectorAll("[data-say]").forEach((b) => { b.onclick = () => speak(b.dataset.say); });
+$("speechForm").onsubmit = (e) => { e.preventDefault(); const t = $("speech").value.trim(); if (t) { speak(t); $("speech").value = ""; } };
+document.querySelectorAll("[data-call]").forEach((b) => {
+  b.onclick = () => act(() => api("/api/twin/temi/call", { method: "POST", body: JSON.stringify({ answered: b.dataset.call === "true" }) }));
+});
+$("gameDone").onclick = () => act(() => api("/api/twin/pi/game", { method: "POST" }));
+$("stop").onclick = () => act(() => api("/api/twin/stop", { method: "POST" }));
+
+function deviceChip(id, name, mode) {
+  const el = $(id); el.dataset.mode = mode;
+  el.textContent = `${name} ${{ real: "실제", virtual: "가상", offline: "끊김" }[mode]}`;
+}
+
+function slot(name) { return SLOTS[name] || SLOTS["보행_대기"]; }
+
+function render(msg) {
+  const { agent, devices, world } = msg;
+  if (devices) {
+    deviceChip("chipTemi", "Temi", devices.temi); deviceChip("chipPi", "Pi", devices.pi);
+    $("chipApps").textContent = `앱 ${devices.apps}`;
+    document.querySelectorAll("[data-device]").forEach((b) => { b.setAttribute("aria-pressed", String(devices[b.dataset.device] === "virtual")); });
+  }
+  if (msg.kind !== "hello" && twinEnabled) refreshStatusSoon();
+  if (!world) return;
+  const [tx, ty] = slot(world.temi.location);
+  $("temi").setAttribute("transform", `translate(${tx} ${ty})`);
+  const route = $("route");
+  if (world.temi.target) {
+    const [gx, gy] = slot(world.temi.target);
+    route.setAttribute("d", `M${tx} ${ty} L${gx} ${gy}`); route.classList.remove("hidden");
+  } else route.classList.add("hidden");
+  const person = world.person, dot = $("person");
+  if (person && person.position_m !== null && person.position_m !== undefined) {
+    const x = COURSE.x0 + (COURSE.x1 - COURSE.x0) * person.position_m / COURSE.meters;
+    dot.setAttribute("transform", `translate(${x} ${COURSE.y})`); dot.dataset.phase = person.phase; dot.classList.remove("hidden");
+  } else dot.classList.add("hidden");
+  $("saying").textContent = world.temi.saying || "-";
+  $("heard").textContent = world.temi.heard || "-";
+
+  const rows = [];
+  if (agent && agent.active) {
+    rows.push(["검사", `#${agent.session_id} · ${agent.resident_name}님`]);
+    rows.push(["단계", MODE[agent.mode] || agent.mode]);
+    if (agent.condition) rows.push(["조건", `${CONDITION[agent.condition] || agent.condition}${person?.attempt ? ` · ${person.attempt}회째` : ""}`]);
+    if (person) rows.push(["참가자", `${PHASE[person.phase] || person.phase}${person.position_m > 0 ? ` · ${person.position_m.toFixed(1)} m` : ""}`]);
+    if (agent.waiting) rows.push(["기다리는 신호", agent.waiting]);
+    if (agent.confirmed) rows.push(["확인 재측정", "진행함"]);
+    if (agent.call_queue.length) rows.push(["다음 통화", agent.call_queue.join(" → ")]);
+  } else rows.push(["검사", "진행 중인 검사 없음"]);
+  rows.push(["Temi", `${world.temi.location}${world.temi.target ? ` → ${world.temi.target}` : ""} · 화면 ${world.temi.screen}`]);
+  if (world.temi.call) rows.push(["영상통화", `${world.temi.call.name} · ${{ ringing: "거는 중", answered: "연결됨", no_answer: "안 받음" }[world.temi.call.state]}`]);
+  if (world.game) rows.push(["게임", `${world.game.game_type} · ${world.game.state === "running" ? "진행 중" : "끝"}`]);
+  if (world.last_trial) {
+    const t = world.last_trial;
+    rows.push(["마지막 측정", t.speed_mps == null ? "측정값 없음" : `${t.speed_mps} m/s${t.stopped ? " · 멈춤" : ""}${t.max_persons > 1 ? ` · ${t.max_persons}명` : ""}${t.word_count != null ? ` · 단어 ${t.word_count}` : ""}`]);
+  }
+  const dl = $("state"); dl.replaceChildren();
+  for (const [k, v] of rows) { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; dl.append(dt, dd); }
+}
+
+let statusTimer = null;
+function refreshStatusSoon() { clearTimeout(statusTimer); statusTimer = setTimeout(refreshStatus, 300); }
+
+function clock(iso) {
+  const d = new Date(iso), two = (n) => String(n).padStart(2, "0");
+  return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+}
+function peerGroup(peer) { return peer.startsWith("app") ? "app" : peer; }
+function renderTimeline() {
+  const shown = new Set([...document.querySelectorAll("[data-filter]")].filter((c) => c.checked).map((c) => c.dataset.filter));
+  const list = $("timeline"); list.replaceChildren();
+  for (const e of entries.slice(0, 250)) {
+    if (!shown.has(peerGroup(e.peer))) continue;
+    const li = document.createElement("li"); li.className = `${e.dir}${e.dropped ? " dropped" : ""}`;
+    const t = document.createElement("span"); t.className = "t"; t.textContent = clock(e.t);
+    const peer = document.createElement("span"); peer.className = "peer"; peer.textContent = `${e.dir === "in" ? "←" : "→"} ${e.peer.replace(/^app:/, "앱 ")}`;
+    const type = document.createElement("span"); type.className = "type"; type.textContent = e.type + (e.dropped ? " (전달 안 됨)" : "");
+    const payload = document.createElement("span"); payload.className = "payload";
+    const text = JSON.stringify(e.payload); payload.textContent = text === "{}" ? "" : text.length > 160 ? `${text.slice(0, 160)}…` : text;
+    li.append(t, peer, type, payload); list.append(li);
+  }
+}
+document.querySelectorAll("[data-filter]").forEach((c) => { c.onchange = renderTimeline; });
+
+function renderRequests() {
+  const list = $("requests"); list.replaceChildren();
+  const items = entries.filter((e) => e.type === "request.created").slice(0, 8);
+  if (!items.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "아직 없습니다."; list.append(li); return; }
+  for (const e of items) {
+    const r = e.payload, li = document.createElement("li");
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.textContent = `${r.target_role === "guardian" ? "보호자" : "요양사"} · ${r.kind} · ${r.priority} · ${r.topic}`;
+    const text = document.createElement("div"); text.textContent = r.text;
+    li.append(meta, text);
+    if (r.explanation) { const why = document.createElement("div"); why.className = "why"; why.textContent = r.explanation; li.append(why); }
+    list.append(li);
+  }
+}
+
+const slots = $("slots");
+for (const [name, [x, y]] of Object.entries(SLOTS)) {
+  const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  c.setAttribute("class", "slot"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 21);
+  const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  t.setAttribute("x", x); t.setAttribute("y", y - 28); t.setAttribute("text-anchor", "middle"); t.textContent = name;
+  slots.append(c, t);
+}
+
+if (token) start(); else showLogin();
+</script>
+</body>
+</html>

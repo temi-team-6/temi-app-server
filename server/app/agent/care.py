@@ -162,7 +162,7 @@ class CareFlow(WalkFlow):
         st.mode = "game"
         params = {"game_id": game.id, "game_type": game_type.value, "level": level}
         await self._temi("temi.show", {"screen": "game", **params})
-        if game_type in (GameType.STROOP, GameType.WHACK):
+        if game_type == GameType.WHACK:
             await self._pi("game.start", params)
 
     async def _on_game_completed(self, m: GameCompleted) -> None:

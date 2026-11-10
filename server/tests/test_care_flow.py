@@ -30,13 +30,14 @@ async def test_mild_pain_switches_to_seated_game(devices: FakeDevices) -> None:
 
     await devices.send("temi", "speech.heard", {"text": "조금 아파요"})
     check = await staff.wait_for("request.created")
-    game = await devices.pi.wait_for("game.start")
+    game = await devices.temi.wait_for("temi.show", lambda m: m["payload"].get("screen") == "game")
 
     assert check["payload"]["topic"] == "pain_check"
     assert game["payload"]["game_type"] == "stroop"
+    assert devices.pi.of_type("game.start") == []
     assert guardian.of_type("request.created") == []
 
-    await devices.send("pi", "game.completed",
+    await devices.send("temi", "game.completed",
                        {"game_id": game["payload"]["game_id"], "rt_ms": [350, 420, 380], "correct": [True, True, False]})
     await devices.temi.wait_for("temi.show", lambda m: m["payload"].get("screen") == "idle")
     assert (await current_session()).status == SessionStatus.COMPLETED

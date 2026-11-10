@@ -101,6 +101,8 @@ class Monitor:
                 temi["target"] = None
             case "out", "temi.show":
                 temi["screen"] = p.get("screen")
+                if p.get("screen") == "game":
+                    self.world["game"] = {k: p.get(k) for k in ("game_id", "game_type", "level")} | {"state": "running"}
                 if p.get("screen") == "idle":
                     self.world.update(person=None, game=None)
                     temi.update(saying=None, call=None)
@@ -130,8 +132,6 @@ class Monitor:
                                              "min_confidence", "word_count")}
             case "out", "trial.abort" if person:
                 person.update(phase="aborted", reason=p.get("reason"))
-            case "out", "game.start":
-                self.world["game"] = {**p, "state": "running"}
             case "in", "game.completed" if self.world["game"]:
                 self.world["game"]["state"] = "done"
             case _:

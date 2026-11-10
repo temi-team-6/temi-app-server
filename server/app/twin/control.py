@@ -4,7 +4,7 @@ from typing import Any
 
 from ..agent import agent
 from ..hub import hub
-from .devices import GAME_RESULT, VirtualDevices
+from .devices import GAME_RESULT, TEMI_GAMES, VirtualDevices
 from .monitor import monitor
 from .scenarios import SCENARIOS, Ctx
 
@@ -109,11 +109,11 @@ class Twin:
         await devices.send("temi", "video_call.result", {"staff_id": call["payload"]["staff_id"], "answered": answered})
 
     async def finish_game(self) -> None:
-        devices = self._require("pi")
         game = monitor.world["game"]
         if not game or game.get("state") != "running":
             raise TwinError("진행 중인 게임이 없습니다.")
-        await devices.send("pi", "game.completed", {"game_id": game["game_id"], **GAME_RESULT})
+        device = "temi" if game.get("game_type") in TEMI_GAMES else "pi"
+        await self._require(device).send(device, "game.completed", {"game_id": game["game_id"], **GAME_RESULT})
 
     def _require(self, device: str) -> VirtualDevices:
         devices = self._devices()

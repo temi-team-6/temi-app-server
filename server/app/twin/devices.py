@@ -25,6 +25,7 @@ SLOW_ANIMALS: Message = {**GOOD_WALK["animals"], "speed_mps": 0.88, "duration_s"
 SLOW_COUNTDOWN: Message = {**GOOD_WALK["countdown"], "speed_mps": 0.88, "duration_s": 4.5}
 SLOW_DUAL_WALK: dict[str, Message] = {**GOOD_WALK, "animals": SLOW_ANIMALS, "countdown": SLOW_COUNTDOWN}
 GAME_RESULT: Message = {"rt_ms": [352, 410, 388, 365, 420, 398], "correct": [True, True, False, True, True, True]}
+TEMI_GAMES = frozenset({"stroop", "memory"})
 
 
 class VirtualSocket:
@@ -123,6 +124,9 @@ class VirtualDevices:
                 self._emit(0.6 + 0.09 * len(payload.get("text", "")), "temi", "temi.say_done", reply_to=msg["id"])
             case "temi.goto":
                 self._emit(2.5, "temi", "temi.arrived", {"location": payload["location"]})
+            case "temi.show" if (payload.get("screen") == "game" and payload.get("game_type") in TEMI_GAMES
+                                 and self.game_result is not None):
+                self._emit(4.0, "temi", "game.completed", {"game_id": payload["game_id"], **self.game_result})
             case "temi.video_call" if self.call_answers:
                 answered = self.call_answers.pop(0)
                 self._emit(3.0, "temi", "video_call.result", {"staff_id": payload["staff_id"], "answered": answered})

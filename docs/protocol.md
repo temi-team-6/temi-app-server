@@ -65,7 +65,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 |---|---|---|
 | `temi.say` | `{text}` | TTS로 말하고 화면에 표시한다. 받은 순서대로 이어서 말하고, 앞 문장을 끊지 않는다. 다 말하면 `temi.say_done`을 보낸다 |
 | `temi.ask` | `{text}` | 말한 뒤 음성으로 대답을 듣는다. 대답은 `speech.heard`에 `reply_to`를 붙여 보낸다 |
-| `temi.show` | `{screen, ...}` | 화면 전환. `screen`: `idle`, `walk`(`condition`, `attempt`), `game`(`game_id`, `game_type`, `level`) |
+| `temi.show` | `{screen, ...}` | 화면 전환. `screen`: `idle`, `walk`(`condition`, `attempt`), `game`(`game_id`, `game_type`, `level`). `game_type`이 `stroop`·`memory`면 Temi가 화면 터치로 게임을 진행하고 `game.completed`를 보낸다. `whack`은 안내 화면만 띄운다(진행은 Pi) |
 | `temi.goto` | `{location}` | 저장된 위치로 이동하고 도착하면 `temi.arrived`를 보낸다 |
 | `temi.video_call` | `{staff_id, name}` | 해당 요양사에게 영상통화를 건다. 결과는 `video_call.result`로 보낸다 |
 
@@ -80,7 +80,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `temi.arrived` | `{location}` | `temi.goto` 도착 |
 | `temi.goto_failed` | `{location, reason?}` | 이동이 중단됨(SDK 이동 상태 `abort`). `reason`에 SDK가 준 설명(장애물 등) |
 | `video_call.result` | `{staff_id, answered}` | 통화 연결 성공(`true`) 또는 무응답·거절(`false`) |
-| `game.completed` | `{game_id, rt_ms[], correct[]}` | 터치스크린 게임(그림카드)이 끝났을 때 |
+| `game.completed` | `{game_id, rt_ms[], correct[]}` | Temi 터치 게임(스트룹, 그림카드)이 끝났을 때. 반응시간은 자극을 띄운 시각부터 터치까지 Temi가 잔다 |
 
 ### 서버 → Pi
 
@@ -89,7 +89,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `trial.start` | `{trial_id, condition, attempt}` | 측정을 준비한다. 시작선 앞에 사람이 보이면 `trial.ready`를 보낸다. 아직 재지 않는다 |
 | `trial.go` | `{trial_id}` | 출발 신호가 나갔다. 이때부터 시작선·끝선 통과를 재고 끝선을 넘으면 `trial.completed`를 보낸다. 15초 안에 끝선을 넘지 않으면 `speed_mps: null`로 보낸다 |
 | `trial.abort` | `{trial_id, reason}` | 측정을 취소한다. 결과를 보내지 않는다 |
-| `game.start` | `{game_id, game_type, level}` | LED 버튼 패드 게임을 시작한다(`whack`, `stroop`) |
+| `game.start` | `{game_id, game_type, level}` | LED 버튼 패드 게임을 시작한다(`whack`만) |
 | `game.abort` | `{}` | 게임을 중단한다 |
 
 ### Pi → 서버
@@ -100,7 +100,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `trial.ready` | `{trial_id}` | `trial.start` 후 시작선 앞에 사람이 한 명 보일 때. 한 번만 보내면 된다 |
 | `trial.progress` | `{trial_id, position_m}` | 선택. 걷는 동안 시작선에서부터 간 거리(m, 0~4)를 초당 몇 번 보낸다. 트윈 지도에만 쓰고 판정에는 쓰지 않는다. 발목 x 픽셀을 시작선·끝선 픽셀 사이로 비례시키면 된다 |
 | `trial.completed` | 아래 표 | 측정이 끝났을 때. 측정 실패도 보낸다(`speed_mps: null`) |
-| `game.completed` | `{game_id, rt_ms[], correct[], raw?}` | 버튼 패드 게임이 끝났을 때. 두 배열 길이는 같아야 한다 |
+| `game.completed` | `{game_id, rt_ms[], correct[], raw?}` | 버튼 패드 게임(두더지 잡기)이 끝났을 때. 두 배열 길이는 같아야 한다 |
 | `safety.alert` | `{kind, detail?}` | 주저앉음 등 안전 신호. `kind`: `fall` |
 
 `trial.completed` payload:
@@ -239,7 +239,7 @@ trial.completed ─▶ 유효 판정
 | 항목 | 의미 |
 |---|---|
 | `condition` | `single`(그냥 걷기), `animals`(동물 이름 말하며 걷기), `countdown`(숫자 거꾸로 세며 걷기) |
-| `game_type` | `memory`(그림카드, 터치), `stroop`(스트룹, 화면+버튼 패드), `whack`(두더지, 버튼 패드) |
+| `game_type` | `memory`(그림카드, 터치), `stroop`(스트룹, Temi 화면 터치), `whack`(두더지, 버튼 패드) |
 | `dual_task_cost` | `(single 속도 − 이중과제 속도) / single 속도 × 100`. 조건별 마지막 유효 측정 기준 |
 | `synthetic` | 시연용 가상 기록이다. **앱 화면에 반드시 "가상 데이터"로 표시한다** |
 | `time_of_day` | `morning`, `afternoon`, `evening`(서버 시간대 Asia/Seoul) |

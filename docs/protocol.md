@@ -279,4 +279,4 @@ A·B 모두 지난 3주 동안 월·수·금 오전에 검사한 가상 기록�
 
 - **Pi + Arduino:** `/ws/device`에 Pi 토큰으로 연결한다. `rfid.scanned`, `trial.start`→`trial.ready`→`trial.go`→`trial.completed`, `game.start`→`game.completed`, `safety.alert` 순서로 붙인다. 트윈(`/twin/`)의 가상 Pi가 같은 메시지를 보내고, 상태판에서 실제 Pi가 보낸 메시지를 비교할 수 있다.
 - **보호자·요양사 앱:** 로그인 → `/ws/app` 연결 → `GET /api/requests`로 요청 화면, `GET /api/residents/{id}/trend`로 리포트 화면. 트윈에서 시나리오를 돌리면 요청이 실제로 들어온다.
-- **Temi 앱:** 트윈의 가상 Temi(`app/twin/devices.py`)가 Temi 앱과 같은 역할을 한다. `temi.say`마다 TTS가 끝나면 `temi.say_done`을 보내는 것이 필수다. 실제 Temi를 붙이고 트윈에서 가상 Pi로 보행 시나리오를 돌리면 Temi만 따로 검증할 수 있다.
+- **Temi 앱:** [`temi-robot-app`](https://github.com/temi-team-6/temi-robot-app) 저장소(런처 16405·안드로이드 6에 맞춰 Temi SDK 0.10.81 고정). 트윈의 가상 Temi(`app/twin/devices.py`)가 같은 역할을 한다. `temi.say`마다 TTS가 끝나면 `temi.say_done`을 보내는 것이 필수다. 실제 Temi를 붙이고 트윈에서 가상 Pi로 보행 시나리오를 돌리면 Temi만 따로 검증할 수 있다.

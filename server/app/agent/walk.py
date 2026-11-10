@@ -87,6 +87,7 @@ class WalkFlow(AgentCore):
                 raise LookupError(f"resident {resident_id} not found")
             if self.state is not None:
                 await self._finish(SessionStatus.ABORTED, "replaced_by_new_session")
+            await self.close_orphaned_sessions("orphaned")
             session = TestSession(resident_id=resident.id, synthetic=synthetic)
             db.add(session)
             await db.commit()

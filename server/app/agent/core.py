@@ -6,11 +6,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select, update
+
 from ..db import SessionLocal
 from ..events import notify_resident
 from ..hub import hub
 from ..models import (
     AgentRequest,
+    GameResult,
+    GameStatus,
     Observation,
     ObservationSource,
     Priority,
@@ -19,6 +23,8 @@ from ..models import (
     Role,
     SessionStatus,
     TestSession,
+    Trial,
+    TrialStatus,
 )
 from ..protocol import make
 from ..schemas import request_out
@@ -71,6 +77,31 @@ class AgentCore:
         await self._temi("temi.show", {"screen": "idle"})
         await notify_resident("session.ended", {"session_id": st.session_id, "status": status.value,
                                                 "end_reason": reason}, st.resident_id)
+
+    async def close_orphaned_sessions(self, reason: str) -> int:
+        """에이전트가 진행하지 않는데 DB에 '진행 중'으로 남은 검사를 중단으로 닫는다.
+
+        진행 상태는 메모리에만 있어 서버가 재시작되면 이어 갈 수 없다. 그대로 두면 앱 달력·리포트에
+        끝나지 않는 검사로 남으므로, 시작할 때와 새 검사를 열기 전에 정리한다. 닫은 검사 수를 돌려준다.
+        """
+        current = self.state.session_id if self.state else None
+        now = datetime.now(UTC)
+        async with SessionLocal() as db:
+            ids = list(await db.scalars(
+                select(TestSession.id).where(TestSession.status == SessionStatus.ACTIVE, TestSession.id != current)
+            ))
+            if not ids:
+                return 0
+            await db.execute(update(Trial).where(Trial.session_id.in_(ids), Trial.status == TrialStatus.RUNNING)
+                             .values(status=TrialStatus.ABORTED, invalid_reason=reason[:50], completed_at=now))
+            await db.execute(update(GameResult).where(GameResult.session_id.in_(ids),
+                                                      GameResult.status == GameStatus.RUNNING)
+                             .values(status=GameStatus.ABORTED, completed_at=now))
+            await db.execute(update(TestSession).where(TestSession.id.in_(ids))
+                             .values(status=SessionStatus.ABORTED, end_reason=reason, ended_at=now))
+            await db.commit()
+        log.warning("closed %d orphaned session(s) as %s: %s", len(ids), reason, ids)
+        return len(ids)
 
     async def _observe(self, resident_id: int, source: ObservationSource, text: str, *,
                        author_id: int | None = None, data: dict[str, Any] | None = None) -> None:

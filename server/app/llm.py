@@ -5,6 +5,7 @@
 """
 
 import logging
+import re
 from collections.abc import Sequence
 from typing import Literal
 
@@ -64,7 +65,21 @@ async def complete(system: str, prompt: str, *, history: Sequence[Turn] = (),
         log.warning("LLM call failed (%s), falling back to rules: %s", model, e)
         return None
     text = "".join(block.text for block in message.content if block.type == "text").strip()
+    if message.stop_reason == "max_tokens":
+        # 토큰 한도에서 잘린 답은 문장 중간에서 끝난다. 마지막 완결 문장까지만 쓴다.
+        log.warning("LLM reply hit max_tokens (%s, %d), trimming to the last full sentence", model, max_tokens)
+        text = trim_to_sentence(text)
     return text or None
+
+
+# 문장 끝 기호 뒤에 공백이나 글 끝이 와야 문장 끝으로 본다("1.3 m/s"의 점은 제외).
+SENTENCE_END = re.compile(r"[.?!…。](?=\s|$)")
+
+
+def trim_to_sentence(text: str) -> str:
+    """마지막 완결 문장 뒤를 버린다. 완결된 문장이 없으면 빈 문자열."""
+    ends = [m.end() for m in SENTENCE_END.finditer(text)]
+    return text[:ends[-1]].strip() if ends else ""
 
 
 async def classify(instruction: str, text: str, labels: Sequence[str], *, timeout: float = 5.0) -> str | None:

@@ -95,7 +95,7 @@ async def answer(db: AsyncSession, resident: Resident, user_id: int, message: st
     )
     turns: list[llm.Turn] = [("user" if m.role == "user" else "assistant", m.text)
                              for m in previous[-HISTORY_TURNS:]]
-    reply = await llm.complete(system, message, history=turns, tier="smart", max_tokens=800)
+    reply = await llm.complete(system, message, history=turns, tier="smart", max_tokens=2000)
     db.add(ChatMessage(resident_id=resident.id, user_id=user_id, role="user", text=message))
     out = ChatMessage(resident_id=resident.id, user_id=user_id, role="assistant",
                       text=reply or fallback_reply(sessions), mock=reply is None)

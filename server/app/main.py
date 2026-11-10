@@ -29,6 +29,8 @@ log = logging.getLogger("temi")
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await seed_if_empty()
+    # 재시작 전에 진행 중이던 검사는 이어 갈 수 없으므로 중단으로 닫는다.
+    await agent.close_orphaned_sessions("server_restarted")
     yield
     await engine.dispose()
 

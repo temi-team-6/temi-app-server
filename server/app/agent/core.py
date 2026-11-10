@@ -2,8 +2,12 @@
 
 import asyncio
 import logging
+import re
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from typing import Any
 
 from sqlalchemy import select, update
@@ -31,6 +35,15 @@ from ..schemas import request_out
 
 log = logging.getLogger(__name__)
 
+# Pi 마이크는 Temi 위에 있어 Temi가 한 말도 받아 적는다. 받아 적기는 업로드·인식 때문에 말이 끝난 뒤에 도착하므로,
+# 시각이 아니라 글자로 거른다: 최근 Temi 문장과 거의 같으면 참가자 발화가 아니다.
+ECHO_WINDOW_S = 15.0
+ECHO_SIMILARITY = 0.6
+
+
+def _letters(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text)
+
 
 
 
@@ -54,6 +67,22 @@ class SessionState:
 class AgentCore:
     def __init__(self) -> None:
         self.state: SessionState | None = None
+        self._temi_lines: deque[tuple[float, str]] = deque(maxlen=20)
+
+    def _is_temi_echo(self, heard: str) -> bool:
+        heard_letters = _letters(heard)
+        if len(heard_letters) < 2:
+            return False
+        since = time.monotonic() - ECHO_WINDOW_S
+        for said_at, line in self._temi_lines:
+            said = _letters(line)
+            if said_at < since or not said:
+                continue
+            if len(heard_letters) >= 4 and heard_letters in said:
+                return True
+            if SequenceMatcher(None, heard_letters, said).ratio() >= ECHO_SIMILARITY:
+                return True
+        return False
 
     def _cancel_gate(self) -> None:
         st = self.state
@@ -141,6 +170,8 @@ class AgentCore:
 
     async def _temi(self, type_: str, payload: dict[str, Any]) -> str:
         msg = make(type_, payload, session_id=self.state.session_id if self.state else None)
+        if type_ in ("temi.say", "temi.ask"):
+            self._temi_lines.append((time.monotonic(), payload["text"]))
         await hub.send_device("temi", msg)
         return msg["id"]
 

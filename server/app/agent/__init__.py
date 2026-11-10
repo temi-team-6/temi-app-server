@@ -93,6 +93,8 @@ class Agent(GuardianFlow):
                 await self._on_trial_completed(payload)
             case GameCompleted():
                 await self._on_game_completed(payload)
+            case SpeechHeard(text=text) if device == "pi" and self._is_temi_echo(text):
+                log.info("ignored Temi's own voice heard by the pi mic: %s", text)
             case SpeechHeard(text=text):
                 await self._on_speech(text)
             case SafetyAlert():

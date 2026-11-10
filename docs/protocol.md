@@ -64,7 +64,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | type | payload | Temi가 할 일 |
 |---|---|---|
 | `temi.say` | `{text}` | TTS로 말하고 화면에 표시한다. 받은 순서대로 이어서 말하고, 앞 문장을 끊지 않는다. 다 말하면 `temi.say_done`을 보낸다 |
-| `temi.ask` | `{text}` | 말한 뒤 음성으로 대답을 듣는다. 대답은 `speech.heard`에 `reply_to`를 붙여 보낸다 |
+| `temi.ask` | `{text}` | 질문을 말한다. 대답은 참가자 발화로 온다: 기본은 Pi 마이크(`speech.heard`, Pi가 보냄). Temi 앱의 음성 입력을 'Temi 내장'으로 두면 Temi가 듣고 `reply_to`를 붙여 보낸다. 서버는 `reply_to`가 아니라 지금 단계(통증 확인 중)로 대답을 가른다 |
 | `temi.show` | `{screen, ...}` | 화면 전환. `screen`: `idle`, `walk`(`condition`, `attempt`), `game`(`game_id`, `game_type`, `level`). `game_type`이 `stroop`·`memory`면 Temi가 화면 터치로 게임을 진행하고 `game.completed`를 보낸다. `whack`은 안내 화면만 띄운다(진행은 Pi) |
 | `temi.goto` | `{location}` | 저장된 위치로 이동하고 도착하면 `temi.arrived`를 보낸다 |
 | `temi.video_call` | `{staff_id, name}` | 해당 요양사에게 영상통화를 건다. 결과는 `video_call.result`로 보낸다 |
@@ -76,7 +76,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | type | payload | 언제 |
 |---|---|---|
 | `temi.say_done` | `{}` | `temi.say` 하나를 다 말했을 때(SDK의 TTS 완료 콜백). `reply_to`에 그 `temi.say`의 `id`를 넣는다. **필수**: 서버는 이걸 받고 나서 출발 신호를 보낸다 |
-| `speech.heard` | `{text}` | 참가자 발화를 인식했을 때. `temi.ask`의 답이면 `reply_to`를 붙인다 |
+| `speech.heard` | `{text}` | Temi 앱의 음성 입력이 'Temi 내장'일 때만. 참가자 발화를 인식했을 때. `temi.ask`의 답이면 `reply_to`를 붙인다. 기본 설정(Pi 마이크)에서는 Pi가 보낸다 |
 | `temi.arrived` | `{location}` | `temi.goto` 도착 |
 | `temi.goto_failed` | `{location, reason?}` | 이동이 중단됨(SDK 이동 상태 `abort`). `reason`에 SDK가 준 설명(장애물 등) |
 | `video_call.result` | `{staff_id, answered}` | 통화 연결 성공(`true`) 또는 무응답·거절(`false`) |
@@ -102,6 +102,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `trial.completed` | 아래 표 | 측정이 끝났을 때. 측정 실패도 보낸다(`speed_mps: null`) |
 | `game.completed` | `{game_id, rt_ms[], correct[], raw?}` | 버튼 패드 게임(두더지 잡기)이 끝났을 때. 두 배열 길이는 같아야 한다 |
 | `safety.alert` | `{kind, detail?}` | 주저앉음 등 안전 신호. `kind`: `fall` |
+| `speech.heard` | `{text}` | 검사가 진행 중일 때 Pi 마이크로 들은 참가자 발화를 받아 적은 글자. 말한 덩어리마다 하나. Pi가 Temi 위에 있어 Temi 목소리도 들어가므로, 서버는 최근 15초 안에 Temi가 한 문장과 거의 같은 글자(글자만 비교해 60% 이상 같거나, 4글자 이상이 그 문장에 그대로 들어 있음)는 버린다. Pi는 걸러 보내지 않아도 된다 |
 
 `trial.completed` payload:
 
@@ -269,8 +270,8 @@ A·B 모두 지난 3주 동안 월·수·금 오전에 검사한 가상 기록�
 
 | 항목 | 지금 상태 | 정해지면 바뀌는 것 |
 |---|---|---|
-| 이중과제 단어 수 출처 | Pi가 `trial.completed.word_count`로 보낸다고 가정 | 음성 인식을 Temi나 서버에서 하면 서버가 합친다 |
-| 음성 업로드 | 없음 | 외부 마이크와 서버 STT를 쓰면 업로드 API를 추가한다 |
+| 이중과제 단어 수 출처 | Pi가 `trial.completed.word_count`로 보낸다고 가정 | STT를 서버에서 하면 서버가 받아 적은 글자로 센다 |
+| 음성 인식(STT) | Pi 마이크로 받는다(기본). STT 서비스와, Pi에서 받아 적을지 서버로 올려 받아 적을지는 미정 | 서버에서 하면 음성 업로드 API를 추가한다. 어느 쪽이든 서버에는 `speech.heard`로 들어온다 |
 | 영상통화 방식 | Temi 내장 통화를 가정 | 안 되면 `temi.video_call` 처리 주체가 바뀐다 |
 | 앱 푸시 | 앱이 열려 있을 때 WebSocket으로만 받는다 | FCM을 쓰면 서버에 기기 토큰 등록 API를 추가한다 |
 | 에이전트 | 판단은 규칙, 해설·챗봇·분류는 Claude | 실기기 음성 인식 결과에 맞춰 분류 문구와 키워드를 조정한다(12월). 메시지 형식은 유지한다 |

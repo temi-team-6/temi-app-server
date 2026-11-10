@@ -19,6 +19,17 @@ async def current_session() -> TestSession:
     return session
 
 
+async def test_pi_mic_hearing_temi_is_ignored_but_participant_is_not(devices: FakeDevices) -> None:
+    await start_first_walk(devices)
+
+    await devices.send("pi", "speech.heard", {"text": "신호가 나면 평소 속도로 끝선까지 걸어가세요"})
+    assert devices.pi.of_type("trial.abort") == []
+
+    await devices.send("pi", "speech.heard", {"text": "다리가 아파요"})
+    assert devices.pi.of_type("trial.abort")
+    await devices.temi.wait_for("temi.ask")
+
+
 async def test_mild_pain_switches_to_seated_game(devices: FakeDevices) -> None:
     staff = connect_app(await get_user("staff1"))
     guardian = connect_app(await get_user("guardian_a"))

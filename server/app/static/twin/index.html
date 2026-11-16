@@ -237,11 +237,11 @@ const $ = (id) => document.getElementById(id);
 const SLOTS = { "보행_측정": [320, 250], "보행_시작": [70, 90], "보행_끝": [570, 90] };
 const PHASE_SHORT = { approaching: "시작선으로", ready: "출발 대기", walking: "걷는 중", done: "도착", aborted: "측정 취소" };
 let voices = {}, voiceOn = false, voiceQueue = [], voicePlaying = false;
-fetch("voice/manifest.json").then((r) => r.ok ? r.json() : {}).then((m) => { voices = m; });
+fetch("../voice/manifest.json").then((r) => r.ok ? r.json() : {}).then((m) => { voices = m; });
 function playNext() {
   if (voicePlaying || !voiceQueue.length) return;
   voicePlaying = true;
-  const audio = new Audio(`voice/${voiceQueue.shift()}`);
+  const audio = new Audio(`../voice/${voiceQueue.shift()}`);
   audio.onended = audio.onerror = () => { voicePlaying = false; playNext(); };
   audio.play().catch(() => { voicePlaying = false; playNext(); });
 }

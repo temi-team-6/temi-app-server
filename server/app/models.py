@@ -132,6 +132,7 @@ class Trial(Base):
     min_confidence: Mapped[float | None] = mapped_column()
     word_count: Mapped[int | None] = mapped_column()
     error_count: Mapped[int | None] = mapped_column()
+    transcript: Mapped[str | None] = mapped_column(Text)  # 서버가 받아 적은 이중과제 발화(녹음은 저장하지 않음)
     raw: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 

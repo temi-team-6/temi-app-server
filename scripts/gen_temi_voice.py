@@ -145,48 +145,51 @@ def max_seconds(text: str) -> float:
     return 1.5 + 0.3 * len(text)
 
 
-def gemini(key: str, models: list[str], text: str) -> tuple[bytes, str]:
-    body: dict = {
-        "systemInstruction": {"parts": [{"text": GEMINI_STYLE}]},
+NO_STYLE: set[str] = set()  # 말투 지시(systemInstruction)를 받지 않는 모델
+
+
+def gemini(key: str, model: str, text: str) -> tuple[bytes, str]:
+    """한 모델로만 만든다. 분당 제한이면 구글이 알려 준 시간만큼 쉬고 다시, 하루 제한이면 멈춘다."""
+    base: dict = {
         "contents": [{"parts": [{"text": text}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": GEMINI_VOICE}}},
         },
     }
-    for round_ in range(3):
-        too_long = 0
-        for model in models:
-            try:
-                res = _gemini_get(f"{GEMINI_API}/{model}:generateContent", key, body)
-            except urllib.error.HTTPError as e:
-                if e.code in (429, 503):  # 사용량 제한·혼잡: 다음 모델로
-                    continue
-                if e.code == 400 and "systemInstruction" in body:  # 말투 지시를 못 받는 모델이면 지시 없이
-                    print(f"  {model}: 말투 지시를 받지 않아 지시 없이 만듦")
-                    body = {k: v for k, v in body.items() if k != "systemInstruction"}
-                    try:
-                        res = _gemini_get(f"{GEMINI_API}/{model}:generateContent", key, body)
-                    except urllib.error.HTTPError as e2:
-                        if e2.code in (429, 503):
-                            continue
-                        raise RuntimeError(f"{model} {e2.code} {e2.read().decode(errors='replace')[:200]}") from None
-                else:
-                    raise RuntimeError(f"{model} {e.code} {e.read().decode(errors='replace')[:200]}") from None
-            pcm = clean_pcm(base64.b64decode(res["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]))
-            seconds = len(pcm) / (RATE * 2)
-            if seconds > max_seconds(text):  # 지시문까지 읽었거나 말을 지어냄: 다른 모델로
-                print(f"  {model}: {seconds:.0f}초로 너무 길어 버림")
-                too_long += 1
+    waits = too_long = 0
+    while True:
+        body = base if model in NO_STYLE else {**base, "systemInstruction": {"parts": [{"text": GEMINI_STYLE}]}}
+        try:
+            res = _gemini_get(f"{GEMINI_API}/{model}:generateContent", key, body)
+        except urllib.error.HTTPError as e:
+            msg = e.read().decode(errors="replace")
+            if e.code == 400 and "systemInstruction" in body:  # 말투 지시를 못 받는 모델이면 지시 없이
+                NO_STYLE.add(model)
+                print(f"  {model}: 말투 지시를 받지 않는 모델이라 지시 없이 만들어요")
                 continue
-            print(f"  {model}: {seconds:.1f}초")
-            return to_audio(pcm)
-        if too_long == len(models):
-            raise RuntimeError("모든 모델이 너무 긴 음성을 만듦")
-        if round_ < 2:
-            print(f"  모든 모델이 사용량 제한, {20 * (round_ + 1)}초 쉬고 다시")
-            time.sleep(20 * (round_ + 1))
-    raise QuotaExhausted("사용량 제한이 풀리지 않음")
+            if e.code in (429, 503):
+                quota = (re.search(r'"quotaId":\s*"([^"]+)"', msg) or [None, ""])[1]
+                if "PerDay" in quota:
+                    raise QuotaExhausted(f"하루 사용량 초과({quota})") from None
+                waits += 1
+                if waits > 6:
+                    raise QuotaExhausted(f"사용량 제한이 풀리지 않음({quota or e.code})") from None
+                delay = int((re.search(r'"retryDelay":\s*"(\d+)', msg) or [None, "30"])[1]) + 3
+                print(f"  {e.code} 사용량 제한{f'({quota})' if quota else ''}: {delay}초 쉬고 다시")
+                time.sleep(delay)
+                continue
+            raise RuntimeError(f"{model} {e.code} {msg[:200]}") from None
+        pcm = clean_pcm(base64.b64decode(res["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]))
+        seconds = len(pcm) / (RATE * 2)
+        if seconds > max_seconds(text):  # 지시문까지 읽었거나 말을 지어냄: 한 번 더
+            too_long += 1
+            print(f"  {seconds:.0f}초로 너무 길어 버림")
+            if too_long >= 2:
+                raise RuntimeError("두 번 모두 너무 긴 음성")
+            continue
+        print(f"  {seconds:.1f}초")
+        return to_audio(pcm)
 
 
 def main() -> None:
@@ -217,8 +220,8 @@ def main() -> None:
         voice_id = f"{model}-{GEMINI_VOICE}"  # 모델이 바뀌면 파일 이름도 바뀌어 전부 새로 만든다
 
         def synth(text: str) -> tuple[bytes, str]:
-            time.sleep(2)  # 분당 제한을 피한다
-            return gemini(key, [model, model], text)  # 같은 모델로만 한 번 더 시도
+            time.sleep(4)  # 분당 제한을 피한다
+            return gemini(key, model, text)
     else:
         voice_id = "supertonic-F1"
 
@@ -248,11 +251,9 @@ def main() -> None:
             continue
         try:
             data, ext = synth(text)
-        except QuotaExhausted:
+        except QuotaExhausted as e:
             failed += [t for t in lines[i - 1 :] if t not in manifest]
-            print(
-                f"[{i}/{len(lines)}] 무료 사용량을 다 쓴 것 같아 멈춰요. 사용량이 풀린 뒤(보통 다음 날) 다시 실행하면 이어서 만들어요."
-            )
+            print(f"[{i}/{len(lines)}] 사용량 제한으로 멈춰요({e}). 나중에 다시 실행하면 이어서 만들어요.")
             break
         except Exception as e:  # 한 문장이 실패해도 나머지는 만든다
             print(f"[{i}/{len(lines)}] 실패: {text} ({e})")

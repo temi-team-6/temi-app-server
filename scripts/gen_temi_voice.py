@@ -194,6 +194,16 @@ def main() -> None:
     parser.add_argument("--engine", choices=["gemini", "supertonic"], default="gemini")
     parser.add_argument("--tts", default="http://127.0.0.1:7788", help="Supertonic 서버 주소")
     parser.add_argument("--names", nargs="+", default=["A", "B", "C"])
+    parser.add_argument(
+        "--model", help="Gemini TTS 모델 고정(기본: 쓸 수 있는 최신 flash). 모든 대사를 한 모델로 만든다"
+    )
+    parser.add_argument(
+        "--try",
+        dest="try_n",
+        type=int,
+        default=0,
+        help="대사 N개만 static/voice/try/에 만들어 들어 본다(목록은 안 바꿈)",
+    )
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -201,22 +211,35 @@ def main() -> None:
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not key:
             raise SystemExit("GEMINI_API_KEY가 없어요. 서버 .env에 넣어 주세요.")
-        models = gemini_models(key)
-        print("TTS 모델:", ", ".join(models))
-        voice_id = f"gemini-{GEMINI_VOICE}"
+        # 모델마다 목소리 결이 달라서(가벼운 모델은 아이 목소리처럼 들림) 모든 대사를 한 모델로 만든다.
+        model = args.model or gemini_models(key)[0]
+        print(f"TTS 모델: {model} (목소리 {GEMINI_VOICE})")
+        voice_id = f"{model}-{GEMINI_VOICE}"  # 모델이 바뀌면 파일 이름도 바뀌어 전부 새로 만든다
 
         def synth(text: str) -> tuple[bytes, str]:
-            time.sleep(2)  # 무료 등급 분당 제한을 피한다
-            return gemini(key, models, text)
+            time.sleep(2)  # 분당 제한을 피한다
+            return gemini(key, [model, model], text)  # 같은 모델로만 한 번 더 시도
     else:
         voice_id = "supertonic-F1"
 
         def synth(text: str) -> tuple[bytes, str]:
             return supertonic(args.tts, text)
 
+    lines = temi_lines(args.names)
+    if args.try_n:  # 짧은 것·이름 인사·긴 것을 골고루 몇 개만 만들어 본다
+        by_len = sorted(lines, key=len)
+        picks = list(dict.fromkeys([by_len[0], next(t for t in lines if "님, 안녕하세요" in t), by_len[-1], *by_len]))
+        folder = OUT / "try"
+        folder.mkdir(exist_ok=True)
+        for i, text in enumerate(picks[: args.try_n], 1):
+            data, ext = synth(text)
+            (folder / f"{i}{ext}").write_bytes(data)
+            print(f"try/{i}{ext}: {text}")
+        print(f"들어 보기: {folder}")
+        return
+
     manifest: dict[str, str] = {}
     failed: list[str] = []
-    lines = temi_lines(args.names)
     for i, text in enumerate(lines, 1):
         stem = hashlib.sha1(f"{voice_id}|{text}".encode()).hexdigest()[:12]
         existing = [p for p in (OUT / f"{stem}.mp3", OUT / f"{stem}.wav") if p.exists()]

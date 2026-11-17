@@ -45,7 +45,7 @@ class TrialCompleted(BaseModel):
     stopped: bool = Field(False, description="구간 안에서 멈춤 감지")
     max_persons: int = Field(1, description="측정 중 화면 내 최대 인원")
     min_confidence: float | None = Field(None, description="측정 중 관절점 신뢰도 최솟값(0~1)")
-    word_count: int | None = Field(None, description="이중과제 발화 단어 수. 출처 미정")
+    word_count: int | None = Field(None, description="이중과제 발화 단어 수. 서버가 녹음을 받아 적어 셀 때는 null(POST /api/trials/{id}/speech)")
     error_count: int | None = Field(None, description="숫자 세기 오류 수")
     early_start: bool = Field(False, description="trial.go 전에 시작선을 넘음")
     raw: dict[str, Any] = Field(default_factory=dict, description="디버깅용 추가 데이터")

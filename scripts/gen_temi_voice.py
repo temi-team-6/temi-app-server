@@ -92,8 +92,8 @@ def gemini_models(key: str) -> list[str]:
 
 
 def clean_pcm(pcm: bytes) -> bytes:
-    """Gemini 음성 끝에 가끔 붙는 0.1~0.2초짜리 잡음(최대 음량으로 '지직')을 잘라 내고,
-    끝의 긴 무음을 줄인 뒤 짧게 페이드 아웃한다. 16비트 모노 PCM."""
+    """Gemini 음성 앞의 '틱'과 끝에 가끔 붙는 0.1~0.2초짜리 잡음(최대 음량으로 '지직')을 잘라 내고,
+    앞뒤 무음을 줄인 뒤 짧게 페이드 인·아웃한다. 16비트 모노 PCM."""
     import array
 
     a = array.array("h")
@@ -102,6 +102,21 @@ def clean_pcm(pcm: bytes) -> bytes:
 
     def loud(i: int) -> int:
         return max((abs(x) for x in a[i : i + win]), default=0)
+
+    # 앞쪽: 말 시작 전에 '틱' 하고 한 번 튀는 소리(0.05초 무렵)가 있으면 그 뒤에서 자른다
+    head = int(RATE * 0.4)
+    for i in range(0, min(head, n - 11 * win), win):
+        if loud(i) > 8000 and any(loud(i + k * win) < 600 for k in range(2, 11)):  # 튄 뒤 곧 조용해지면 잡음
+            del a[: i + win]
+            break
+    start = 0
+    while start + win < len(a) and loud(start) <= 300:  # 앞 무음은 0.05초만 남긴다
+        start += win
+    del a[: max(0, start - int(RATE * 0.05))]
+    fade_in = min(len(a), int(RATE * 0.01))
+    for k in range(fade_in):
+        a[k] = int(a[k] * k / fade_in)
+    n = len(a)
 
     tail_from = max(0, n - int(RATE * 0.5))
     clipped = next((i for i in range(tail_from, n) if abs(a[i]) >= 32000), None)

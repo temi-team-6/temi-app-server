@@ -238,12 +238,15 @@ const SLOTS = { "보행_측정": [320, 250], "보행_시작": [70, 90], "보행_
 const PHASE_SHORT = { approaching: "시작선으로", ready: "출발 대기", walking: "걷는 중", done: "도착", aborted: "측정 취소" };
 let voices = {}, voiceOn = false, voiceQueue = [], voicePlaying = false;
 fetch("../voice/manifest.json").then((r) => r.ok ? r.json() : {}).then((m) => { voices = m; });
+// 재생기는 하나만 쓴다. 끝남·오류·재생 실패가 겹쳐 와도 다음 문장은 한 번만 시작해 목소리가 겹치지 않는다.
+const voicePlayer = new Audio();
+function voiceDone() { if (!voicePlaying) return; voicePlaying = false; playNext(); }
+voicePlayer.onended = voicePlayer.onerror = voiceDone;
 function playNext() {
   if (voicePlaying || !voiceQueue.length) return;
   voicePlaying = true;
-  const audio = new Audio(`../voice/${voiceQueue.shift()}`);
-  audio.onended = audio.onerror = () => { voicePlaying = false; playNext(); };
-  audio.play().catch(() => { voicePlaying = false; playNext(); });
+  voicePlayer.src = `../voice/${voiceQueue.shift()}`;
+  voicePlayer.play().catch(voiceDone);
 }
 function speakTemi(entry) {
   const file = voiceOn && entry.peer === "temi" && entry.dir === "out"
@@ -359,7 +362,7 @@ document.querySelectorAll("[data-call]").forEach((b) => {
   b.onclick = () => act(() => api("/api/twin/temi/call", { method: "POST", body: JSON.stringify({ answered: b.dataset.call === "true" }) }));
 });
 $("voice").onclick = () => {
-  voiceOn = !voiceOn; voiceQueue = [];
+  voiceOn = !voiceOn; voiceQueue = []; voicePlayer.pause(); voicePlaying = false;
   $("voice").setAttribute("aria-pressed", String(voiceOn));
   $("voice").textContent = voiceOn ? "Temi 음성 끄기" : "Temi 음성 켜기";
 };

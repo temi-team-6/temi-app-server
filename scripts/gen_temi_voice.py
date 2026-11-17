@@ -91,6 +91,35 @@ def gemini_models(key: str) -> list[str]:
     return picked or GEMINI_FALLBACK_MODELS
 
 
+def clean_pcm(pcm: bytes) -> bytes:
+    """Gemini 음성 끝에 가끔 붙는 0.1~0.2초짜리 잡음(최대 음량으로 '지직')을 잘라 내고,
+    끝의 긴 무음을 줄인 뒤 짧게 페이드 아웃한다. 16비트 모노 PCM."""
+    import array
+
+    a = array.array("h")
+    a.frombytes(pcm[: len(pcm) // 2 * 2])
+    n, win = len(a), RATE // 100  # 10ms 단위로 본다
+
+    def loud(i: int) -> int:
+        return max((abs(x) for x in a[i : i + win]), default=0)
+
+    tail_from = max(0, n - int(RATE * 0.5))
+    clipped = next((i for i in range(tail_from, n) if abs(a[i]) >= 32000), None)
+    if clipped is not None:  # 잡음이 시작된 곳까지 거슬러 올라가 거기서 자른다
+        cut = clipped - clipped % win
+        while cut - win >= 0 and loud(cut - win) > 300:
+            cut -= win
+        del a[cut:]
+    end = len(a)
+    while end - win > 0 and loud(end - win) <= 300:  # 끝 무음
+        end -= win
+    del a[min(len(a), end + int(RATE * 0.15)) :]  # 무음은 0.15초만 남긴다
+    fade = min(len(a), int(RATE * 0.02))
+    for k in range(fade):
+        a[len(a) - fade + k] = int(a[len(a) - fade + k] * (fade - k) / fade)
+    return a.tobytes()
+
+
 def to_audio(pcm: bytes) -> tuple[bytes, str]:
     """lameenc가 있으면 mp3(작음), 없으면 wav로 저장한다."""
     try:
@@ -144,7 +173,7 @@ def gemini(key: str, models: list[str], text: str) -> tuple[bytes, str]:
                         raise RuntimeError(f"{model} {e2.code} {e2.read().decode(errors='replace')[:200]}") from None
                 else:
                     raise RuntimeError(f"{model} {e.code} {e.read().decode(errors='replace')[:200]}") from None
-            pcm = base64.b64decode(res["candidates"][0]["content"]["parts"][0]["inlineData"]["data"])
+            pcm = clean_pcm(base64.b64decode(res["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]))
             seconds = len(pcm) / (RATE * 2)
             if seconds > max_seconds(text):  # 지시문까지 읽었거나 말을 지어냄: 다른 모델로
                 print(f"  {model}: {seconds:.0f}초로 너무 길어 버림")

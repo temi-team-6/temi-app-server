@@ -158,7 +158,7 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
           <button type="button" data-rfid="RFID-B-0002">B 카드</button>
           <button type="button" data-rfid="UNKNOWN">미등록 카드</button>
         </div>
-        <div class="row" role="group" aria-label="가상 Pi 걷기 결과(출발 신호 뒤)">
+        <div class="row" role="group" aria-label="가상 Pi: 걷기 결과(출발 신호 뒤), 주저앉음">
           <button type="button" data-walk="good">정상 걷기</button>
           <button type="button" data-walk="slow">느리게</button>
           <button type="button" data-walk="stopped">멈춤</button>
@@ -166,6 +166,7 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
           <button type="button" data-walk="multiple_persons">2명</button>
           <button type="button" data-walk="task_not_engaged">말 안 함</button>
           <button type="button" data-walk="no_measurement">측정 실패</button>
+          <button type="button" id="fall">주저앉음</button>
         </div>
         <form class="row" id="speechForm">
           <input id="speech" placeholder="참가자가 한 말" style="flex:1; min-width:0" aria-label="참가자가 한 말">
@@ -329,7 +330,7 @@ async function refreshStatus() {
     twinEnabled = false; $("twinOff").classList.remove("hidden");
     renderScenarios({ scenarios: [], running: null });
   }
-  document.querySelectorAll("[data-device],[data-rfid],[data-walk],[data-say],[data-call],#gameDone,#stop,#speechForm button")
+  document.querySelectorAll("[data-device],[data-rfid],[data-walk],[data-say],[data-call],#fall,#gameDone,#stop,#speechForm button")
     .forEach((b) => { b.disabled = !twinEnabled; });
 }
 
@@ -381,6 +382,7 @@ $("voice").onclick = () => {
   $("voice").setAttribute("aria-pressed", String(voiceOn));
   $("voice").textContent = voiceOn ? "Temi 음성 끄기" : "Temi 음성 켜기";
 };
+$("fall").onclick = () => act(() => api("/api/twin/pi/fall", { method: "POST" }));
 $("gameDone").onclick = () => act(() => api("/api/twin/pi/game", { method: "POST" }));
 $("stop").onclick = () => act(() => api("/api/twin/stop", { method: "POST" }));
 

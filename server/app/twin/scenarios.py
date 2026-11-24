@@ -24,7 +24,7 @@ class Ctx:
         await self.devices.send("pi", "rfid.scanned", {"tag": RFID[resident]})
 
     async def say(self, text: str, reply_to: str | None = None) -> None:
-        await self.devices.send("temi", "speech.heard", {"text": text}, reply_to)
+        await self.devices.hear(text, reply_to)
 
     async def until(self, device: str, type_: str, mark: int,
                     where: Callable[[Message], bool] = lambda _: True) -> Message:
@@ -151,7 +151,6 @@ class Scenario:
 
 
 PI = frozenset({"pi"})
-BOTH = frozenset({"pi", "temi"})
 NONE: frozenset[str] = frozenset()
 
 SCENARIOS: dict[str, Scenario] = {s.id: s for s in [
@@ -160,12 +159,12 @@ SCENARIOS: dict[str, Scenario] = {s.id: s for s in [
     Scenario("slow_both", "기준 초과 → 보호자 질문", "두 이중과제 모두 느림 → 해설과 함께 guardian_b에게 질문", PI,
              slow_both),
     Scenario("slow_one", "한 과제만 느림 → 확인 재측정", "동물 이름만 느림 → 한 번 더 측정 → 질문 안 함", PI, slow_one),
-    Scenario("question", "검사 중 질문", "\"아무 동물이나 돼요?\" → 답하고 다시 측정", BOTH, question),
-    Scenario("pain_mild", "통증(가벼움)", "보행 중단 → 요양사 확인 요청 → 스트룹 게임", BOTH, pain_mild),
-    Scenario("pain_severe", "통증(심함) → 통화 무응답", "긴급 알림 → 요양사 순서대로 통화 → 아무도 안 받음", BOTH,
+    Scenario("question", "검사 중 질문", "\"아무 동물이나 돼요?\" → 답하고 다시 측정", PI, question),
+    Scenario("pain_mild", "통증(가벼움)", "보행 중단 → 요양사 확인 요청 → 스트룹 게임", PI, pain_mild),
+    Scenario("pain_severe", "통증(심함) → 통화 무응답", "긴급 알림 → 요양사 순서대로 통화 → 아무도 안 받음", PI,
              pain_severe),
-    Scenario("fall", "주저앉음 감지", "안전 신호 → 긴급 알림 → 첫 요양사가 통화 받음", BOTH, fall),
-    Scenario("refuse", "참여 거부", "\"오늘은 하기 싫어\" → 검사 종료", BOTH, refuse),
+    Scenario("fall", "주저앉음 감지", "안전 신호 → 긴급 알림 → 첫 요양사가 통화 받음", PI, fall),
+    Scenario("refuse", "참여 거부", "\"오늘은 하기 싫어\" → 검사 종료", PI, refuse),
     Scenario("guardian_sleep", "보호자 답: 잠을 못 잠", "guardian_b의 대기 질문에 답 → 일시적 변화로 기록", NONE,
              guardian_sleep),
     Scenario("guardian_decline", "보호자 답: 길을 헤맴", "guardian_b의 대기 질문에 답 → 요양사에게 상담 안내 요청", NONE,

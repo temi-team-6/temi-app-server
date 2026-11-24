@@ -96,7 +96,13 @@ class Twin:
         await monitor.broadcast()
 
     async def speak(self, text: str, reply_to: str | None = None) -> None:
-        await self._require("temi").send("temi", "speech.heard", {"text": text}, reply_to)
+        try:
+            await self._devices().hear(text, reply_to)
+        except LookupError as e:
+            raise TwinError(str(e)) from e
+
+    async def fall(self) -> None:
+        await self._require("pi").send("pi", "safety.alert", {"kind": "fall"})
 
     async def rfid(self, tag: str) -> None:
         devices = self._require("pi")

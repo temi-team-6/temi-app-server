@@ -10,6 +10,7 @@ from app.db import SessionLocal
 from app.hub import hub
 from app.models import AgentRequest, TestSession, Trial, TrialStatus
 from app.twin.control import Twin, TwinError
+from app.twin.devices import GAME_RESULT
 from app.twin.monitor import monitor
 from app.twin.scenarios import SCENARIOS
 
@@ -50,16 +51,40 @@ async def test_guardian_answer_scenarios_follow_the_signal(fresh_state: None) ->
     assert consult is not None
 
 
-async def test_scenario_uses_a_real_temi_but_will_not_drive_it(fresh_state: None) -> None:
+async def test_scenarios_drive_only_the_virtual_pi_with_a_real_temi(fresh_state: None) -> None:
+    real_temi = FakeDevices(attach=("temi",))
+    real_temi.temi.virtual = False  # type: ignore[misc]
+    real_temi.game_result = GAME_RESULT  # 실제 Temi에서 사람이 스트룹을 푼다
+    twin = Twin(pace=0)
+
+    await run(twin, "pain_mild")
+    await run(twin, "refuse")
+
+    assert hub.devices["temi"] is real_temi.temi
+    heard = [e["peer"] for e in monitor.log if e["dir"] == "in" and e["type"] == "speech.heard"]
+    assert heard and set(heard) == {"pi"}
+    assert real_temi.temi.of_type("temi.ask")  # 통증을 묻는 말은 실제 Temi가 했다
+    await real_temi.drain()
+
+
+async def test_fall_button_alerts_and_calls_through_a_real_temi(fresh_state: None) -> None:
     real_temi = FakeDevices(attach=("temi",))
     real_temi.temi.virtual = False  # type: ignore[misc]
     twin = Twin(pace=0)
+    await twin.set_device("pi", True)
+    assert twin.devices is not None
 
-    with pytest.raises(TwinError, match="실제 temi"):
-        await twin.run("pain_mild")
-    await run(twin, "normal")
+    await twin.rfid("RFID-B-0002")
+    go = await twin.devices.pi.wait_for("trial.go")
+    await twin.fall()
 
-    assert hub.devices["temi"] is real_temi.temi
+    await real_temi.temi.wait_for("temi.video_call")
+    abort = await twin.devices.pi.wait_for("trial.abort")
+    assert abort["payload"] == {"trial_id": go["payload"]["trial_id"], "reason": "safety:fall"}
+    async with SessionLocal() as db:
+        alert = await db.scalar(select(AgentRequest).where(AgentRequest.topic == "emergency"))
+    assert alert is not None
+    await twin.stop()
     await real_temi.drain()
 
 

@@ -91,6 +91,11 @@ async def walk(body: WalkIn) -> dict[str, Any]:
     return await _guard(twin.walk(body.result))
 
 
+@router.post("/pi/fall")
+async def fall() -> dict[str, Any]:
+    return await _guard(twin.fall())
+
+
 @router.post("/pi/game")
 async def game() -> dict[str, Any]:
     return await _guard(twin.finish_game())

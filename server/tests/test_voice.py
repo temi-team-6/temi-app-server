@@ -70,6 +70,9 @@ async def test_voice_files_are_served(client: AsyncClient) -> None:
     assert res.status_code == 200
     name = next(iter(res.json().values()))
     assert (await client.get(f"/voice/{name}")).status_code == 200
+    # Temi 앱의 '서버 음성' 모드가 쓰는 예전 주소도 같은 파일
+    assert (await client.get("/twin/voice/manifest.json")).json() == res.json()
+    assert (await client.get(f"/twin/voice/{name}")).status_code == 200
 
 
 async def test_walk_sends_audio_for_pre_generated_lines(devices: FakeDevices) -> None:

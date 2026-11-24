@@ -75,6 +75,7 @@ Temi 내장 TTS가 딱딱해서, 고정 대사는 Google Gemini TTS(Leda 목소�
 
 - 서버는 미리 만든 문장이면 `audio_url`(예: `/voice/1a2b3c4d5e6f.mp3`)을 붙인다. 서버 주소 뒤에 붙여 받는다(`https://<서버>/voice/...`). 인증은 필요 없다.
 - 전체 목록은 `GET /voice/manifest.json`(`{문장: 파일 이름}`)이다. 출발 신호가 늦어지지 않도록 Temi 앱은 연결할 때 파일을 미리 받아 두는 것을 권장한다.
+- 지금 Temi 앱(`temi-robot-app`)은 설정의 '서버 음성' 모드에서 `GET /twin/voice/manifest.json`으로 목록을 받아 `text`로 파일을 찾는다(`audio_url`은 아직 안 씀). 이 예전 주소도 같은 파일을 계속 제공하므로 Temi 앱을 바꾸지 않아도 Leda 목소리가 나온다. 기본은 'Temi 음성'이라 시연 때는 '서버 음성'으로 바꾼다.
 - 재생이 끝나면 `temi.say_done`을 보낸다(내장 TTS의 완료 콜백과 같은 시점). 받기나 재생에 실패하면 `text`를 내장 TTS로 말하고 똑같이 `temi.say_done`을 보낸다.
 - 새로 등록한 어르신 이름 인사처럼 목록에 없는 문장은 `audio_url` 없이 온다. 파일은 `scripts/gen_temi_voice.py`로 만들고, 대사를 바꾸면 다시 실행해 커밋한다.
 

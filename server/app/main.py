@@ -46,6 +46,8 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(twin_router)
 app.mount("/voice", StaticFiles(directory=VOICE_DIR), name="voice")
+# 예전 주소. temi-robot-app의 '서버 음성' 모드가 /twin/voice/manifest.json을 읽으므로 같은 파일을 계속 제공한다.
+app.mount("/twin/voice", StaticFiles(directory=VOICE_DIR), name="twin-voice")
 app.mount("/twin", StaticFiles(directory=Path(__file__).parent / "static" / "twin", html=True), name="twin")
 
 

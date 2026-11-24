@@ -5,13 +5,16 @@ import logging
 import re
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any
 
 from sqlalchemy import select, update
 
+from .. import llm
+from ..config import settings
 from ..db import SessionLocal
 from ..events import notify_resident
 from ..hub import hub
@@ -32,7 +35,9 @@ from ..models import (
 )
 from ..protocol import make
 from ..schemas import request_out
+from ..twin.monitor import monitor
 from ..voice import with_audio
+from .ai import SYSTEM, Context, Decision, accept, build_prompt
 
 log = logging.getLogger(__name__)
 
@@ -57,12 +62,20 @@ class SessionState:
     mode: str = "walk"
     trial_id: int | None = None
     trial_condition: str | None = None
+    trial_attempt: int = 0
     call_queue: list[tuple[int, str]] = field(default_factory=list)
     gate: asyncio.Task[None] | None = None
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     said: asyncio.Event = field(default_factory=asyncio.Event)
     awaiting_say: str | None = None
     confirmed: bool = False
+    dialog: list[tuple[str, str]] = field(default_factory=list)
+    # 그만할지 되묻는 동안 멈춘 측정(조건, 시도). 계속하면 여기서 다시 시작한다.
+    paused: tuple[str, int] | None = None
+    last_decision: dict[str, Any] | None = None
+    # AI가 발화를 판단하는 작업과, 그동안 들어와 다음 판단에 한데 넘길 말 덩어리들(care.py)
+    listener: asyncio.Task[None] | None = None
+    heard: list[str] = field(default_factory=list)
 
 
 class AgentCore:
@@ -98,9 +111,19 @@ class AgentCore:
             st.gate.cancel()
         st.gate = None
 
+    def _cancel_listener(self) -> None:
+        st = self.state
+        if st is None:
+            return
+        st.heard.clear()
+        if st.listener is not None and st.listener is not asyncio.current_task():
+            st.listener.cancel()
+        st.listener = None
+
     async def _finish(self, status: SessionStatus, reason: str | None) -> None:
         st = self._require_state()
         self._cancel_gate()
+        self._cancel_listener()
         async with SessionLocal() as db:
             session = await db.get(TestSession, st.session_id)
             assert session is not None
@@ -169,6 +192,39 @@ class AgentCore:
             await db.commit()
         await hub.send_apps(make("request.created", request_out(req).model_dump(mode="json")), role=role, user_id=target_user_id)
 
+    async def _decide(self, point: str, situation: str, actions: Mapping[str, str]) -> Decision | None:
+        """AI에게 판단을 맡긴다. 꺼져 있거나 실패하거나 가드레일 밖이면 None이고, 호출한 흐름은 규칙대로 한다."""
+        st = self.state
+        if st is None or not self._ai_on():
+            return None
+        prompt = build_prompt(situation, actions, await self._ai_context(st))
+        decision = accept(await llm.decide(SYSTEM, prompt, list(actions), timeout=settings.agent_ai_timeout_s), actions)
+        record = {"point": point, "by": "ai" if decision else "rule", "situation": situation,
+                  **(asdict(decision) if decision else {})}
+        st.last_decision = record
+        log.info("AI decision %s by %s: %s", point, record["by"], {k: v for k, v in record.items() if k != "situation"})
+        await monitor.record("note", "ai", make("ai.decision", record, session_id=st.session_id))
+        return decision
+
+    def _ai_on(self) -> bool:
+        return settings.agent_ai_enabled and llm.available()
+
+    async def _line(self, point: str, situation: str, default: str) -> str:
+        """판단 없이 말만 하는 지점. AI가 쓴 말, 없으면 규칙 대사."""
+        decision = await self._decide(point, f"{situation} 규칙 대사라면: '{default}'", {"say": "말만 한다"})
+        return decision.say if decision else default
+
+    async def _ai_context(self, st: SessionState) -> Context:
+        async with SessionLocal() as db:
+            notes = list(await db.scalars(
+                select(Observation.text).where(Observation.resident_id == st.resident_id)
+                .order_by(Observation.id.desc()).limit(5)
+            ))
+        now = f"단계 {st.mode}"
+        if st.trial_condition is not None:
+            now += f" · 조건 {st.trial_condition} {st.trial_attempt}회째" + (" · 측정 중" if st.trial_id else "")
+        return Context(st.resident_name, now, st.dialog, notes)
+
     def _require_state(self) -> SessionState:
         if self.state is None:
             raise RuntimeError("no active session")
@@ -178,6 +234,8 @@ class AgentCore:
         msg = make(type_, with_audio(type_, payload), session_id=self.state.session_id if self.state else None)
         if type_ in ("temi.say", "temi.ask"):
             self._temi_lines.append((time.monotonic(), payload["text"]))
+            if self.state is not None:
+                self.state.dialog.append(("Temi", payload["text"]))
         await hub.send_device("temi", msg)
         return msg["id"]
 
@@ -188,4 +246,4 @@ class AgentCore:
 
 def _log_task_error(task: asyncio.Task[None]) -> None:
     if not task.cancelled() and (exc := task.exception()) is not None:
-        log.error("start gate failed", exc_info=exc)
+        log.error("agent task failed", exc_info=exc)

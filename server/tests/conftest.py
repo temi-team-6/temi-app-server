@@ -59,8 +59,10 @@ async def fresh_state(migrated_schema: None) -> AsyncIterator[None]:
     monitor.reset()
     agent.state = None
     yield
-    if agent.state is not None and agent.state.gate is not None:
-        agent.state.gate.cancel()
+    if agent.state is not None:
+        for task in (agent.state.gate, agent.state.listener):
+            if task is not None:
+                task.cancel()
     agent.state = None
     hub.devices.clear()
     hub.apps.clear()

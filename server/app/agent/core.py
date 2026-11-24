@@ -69,6 +69,11 @@ class AgentCore:
     def __init__(self) -> None:
         self.state: SessionState | None = None
         self._temi_lines: deque[tuple[float, str]] = deque(maxlen=20)
+        # trial_id → 서버가 그 걷기의 녹음을 받아 적고 채점을 마쳤음(api.upload_trial_speech가 알린다)
+        self._speech_done: dict[int, asyncio.Event] = {}
+
+    def speech_scored(self, trial_id: int) -> None:
+        self._speech_done.setdefault(trial_id, asyncio.Event()).set()
 
     def _is_temi_echo(self, heard: str) -> bool:
         heard_letters = _letters(heard)

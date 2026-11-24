@@ -49,6 +49,13 @@ def device_from_token(token: str) -> str | None:
     return None
 
 
+async def current_device(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    device = device_from_token(creds.credentials)
+    if device is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "unknown device token")
+    return device
+
+
 async def current_user(
     creds: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),

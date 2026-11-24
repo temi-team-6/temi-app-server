@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from .. import analysis, llm
+from .. import analysis, llm, stt
 from ..config import settings
 from ..db import SessionLocal
 from ..hub import hub
@@ -174,13 +174,34 @@ class WalkFlow(AgentCore):
             log.warning("ignored trial.completed for inactive trial %s", m.trial_id)
             return
         self._cancel_gate()
+        if m.speech_upload and m.word_count is None and stt.enabled() and st.trial_condition != Condition.SINGLE.value:
+            # 걸음 측정은 끝났고, Pi가 올린 녹음을 서버가 받아 적어 단어 수를 셀 때까지 판정을 미룬다.
+            # 기다리는 동안 Pi의 다른 메시지(안전 신호 등)를 막지 않도록 따로 돌린다. 중단되면 이 작업도 취소된다.
+            st.gate = asyncio.create_task(self._complete_trial(m, wait_for_speech=True))
+            st.gate.add_done_callback(_log_task_error)
+            return
+        await self._complete_trial(m)
+
+    async def _complete_trial(self, m: TrialCompleted, *, wait_for_speech: bool = False) -> None:
+        st = self._require_state()
+        if wait_for_speech:
+            done = self._speech_done.setdefault(m.trial_id, asyncio.Event())
+            try:
+                await asyncio.wait_for(done.wait(), settings.stt_wait_s)
+            except TimeoutError:
+                log.warning("no speech transcript for trial %s within %ss, judging without it",
+                            m.trial_id, settings.stt_wait_s)
+        self._speech_done.pop(m.trial_id, None)
         async with SessionLocal() as db:
             trial = await db.get(Trial, m.trial_id)
             assert trial is not None
+            if m.word_count is None and trial.word_count is not None:  # 서버가 받아 적어 센 값
+                m = m.model_copy(update={"word_count": trial.word_count, "error_count": trial.error_count})
             reason = analysis.invalid_reason(trial.condition, m)
             for key in ("speed_mps", "duration_s", "stopped", "max_persons", "min_confidence", "word_count",
-                        "error_count", "raw"):
+                        "error_count"):
                 setattr(trial, key, getattr(m, key))
+            trial.raw = {**(trial.raw or {}), **m.raw}
             trial.completed_at = datetime.now(UTC)
             trial.status = TrialStatus.INVALID if reason else TrialStatus.VALID
             trial.invalid_reason = reason

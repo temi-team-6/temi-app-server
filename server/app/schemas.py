@@ -70,6 +70,8 @@ class TrialOut(BaseModel):
     invalid_reason: str | None
     speed_mps: float | None
     word_count: int | None
+    error_count: int | None = None
+    transcript: str | None = None
 
 
 class SessionDetail(SessionSummary):
@@ -122,6 +124,19 @@ class ChatMessageOut(BaseModel):
 
 class StartSessionOut(BaseModel):
     session_id: int
+
+
+class TrialSpeechOut(BaseModel):
+    trial_id: int
+    transcript: str
+    word_count: int
+    error_count: int | None
+    model: str
+
+
+class SpeechOut(BaseModel):
+    text: str
+    model: str
 
 
 class HealthOut(BaseModel):

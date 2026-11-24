@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     llm_model_fast: str = "claude-haiku-5-5"
     llm_model_smart: str = "claude-sonnet-5-5"
     llm_timeout_s: float = 10.0
+    # 음성 받아 적기(app/stt.py). 비어 있으면 받아 적지 않고 Pi가 보낸 word_count만 쓴다.
+    gemini_api_key: str = ""
+    gemini_stt_model: str = "gemini-3.6-flash"
+    stt_timeout_s: float = 30.0
+    # 이중과제 trial.completed에 word_count가 없으면 녹음 업로드·받아 적기를 이만큼 기다린 뒤 판정한다.
+    stt_wait_s: float = 20.0
     # 트윈의 가상 기기·시나리오 제어(/api/twin). 상태판 보기(/ws/monitor)는 꺼도 된다. 시연 당일에는 끈다.
     twin_enabled: bool = False
 

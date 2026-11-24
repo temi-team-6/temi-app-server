@@ -112,7 +112,21 @@ Temi 내장 TTS가 딱딱해서, 고정 대사는 Google Gemini TTS(Leda 목소�
 | `trial.completed` | 아래 표 | 측정이 끝났을 때. 측정 실패도 보낸다(`speed_mps: null`) |
 | `game.completed` | `{game_id, rt_ms[], correct[], raw?}` | 버튼 패드 게임(두더지 잡기)이 끝났을 때. 두 배열 길이는 같아야 한다 |
 | `safety.alert` | `{kind, detail?}` | 주저앉음 등 안전 신호. `kind`: `fall` |
-| `speech.heard` | `{text}` | 검사가 진행 중일 때 Pi 마이크로 들은 참가자 발화를 받아 적은 글자. 말한 덩어리마다 하나. Pi가 Temi 위에 있어 Temi 목소리도 들어가므로, 서버는 최근 15초 안에 Temi가 한 문장과 거의 같은 글자(글자만 비교해 60% 이상 같거나, 4글자 이상이 그 문장에 그대로 들어 있음)는 버린다. Pi는 걸러 보내지 않아도 된다 |
+| `speech.heard` | `{text}` | 검사가 진행 중일 때 Pi 마이크로 들은 참가자 발화를 받아 적은 글자. 말한 덩어리마다 하나. Pi가 Temi 위에 있어 Temi 목소리도 들어가므로, 서버는 최근 15초 안에 Temi가 한 문장과 거의 같은 글자(글자만 비교해 60% 이상 같거나, 4글자 이상이 그 문장에 그대로 들어 있음)는 버린다. Pi는 걸러 보내지 않아도 된다. **Pi가 직접 받아 적지 않을 때는 녹음을 `POST /api/speech`로 올린다**(아래 "음성 업로드") |
+
+#### 음성 업로드 (Pi는 녹음만, 받아 적기는 서버)
+
+걸음 측정(YOLO-Pose)에 부담을 주지 않도록 Pi는 녹음만 하고, 서버가 Google Gemini로 들리는 그대로 받아 적는다. 녹음 원본은 서버에 저장하지 않는다(받아 적은 글만 남긴다). 서버 `.env`에 `GEMINI_API_KEY`가 있어야 하고, 없으면 두 API 모두 503이다.
+
+| API | 언제 | 서버가 하는 일 |
+|---|---|---|
+| `POST /api/trials/{trial_id}/speech` | 이중과제 걷기 한 번이 끝났을 때. `trial.go`부터 끝선까지의 녹음 | 받아 적고 단어 수·오류 수를 세어 그 trial에 저장. 응답 `{trial_id, transcript, word_count, error_count, model}` |
+| `POST /api/speech` | 검사 중 참가자가 짧게 말했을 때(통증 질문의 대답 등). 말한 덩어리마다 하나. 이중과제로 걷는 동안의 말은 위 걷기 녹음에 들어가므로 따로 보내지 않는다 | 받아 적어 `speech.heard`와 똑같이 처리(Temi 목소리 거르기 포함). 응답 `{text, model}` |
+
+- 인증: `Authorization: Bearer <Pi 토큰>`. 본문은 녹음 파일 그대로(멀티파트 아님), `Content-Type`에 형식(`audio/wav`, `audio/mp4`(m4a), `audio/mpeg`). 10MB까지.
+- 이중과제 걷기: Pi는 `trial.completed`에 **`speech_upload: true`**를 넣고 `word_count`는 **비워(null) 보내고** 녹음을 올린다. 서버는 받아 적기가 끝날 때까지 최대 20초(`STT_WAIT_S`) 판정을 기다리고, 그 뒤 `word_count` < 3이면 `task_not_engaged`로 다시 걷게 한다. 업로드와 `trial.completed`는 어느 쪽이 먼저 와도 된다. 20초 안에 못 받아 적으면 단어 수 없이 판정한다.
+- `speech_upload`가 없거나 false면(녹음을 올리지 않는 지금의 Pi) 기다리지 않고 지금처럼 판정한다. 그래서 이 기능을 머지해도 Pi를 바꾸기 전까지는 동작이 그대로다. Pi가 `word_count`를 채워 보내도 그 값을 쓰고 기다리지 않는다(트윈의 가상 Pi가 이 방식).
+- 채점: 동물은 서로 다른 동물 이름 수(반복은 한 번, '개·소·말' 같은 한 글자는 따로 떨어진 단어일 때만). 숫자 세기는 말한 숫자 개수가 `word_count`, 바로 앞에 말한 숫자에서 3을 뺀 값이 아닌 숫자 수가 `error_count`(첫 숫자는 100이나 97이면 맞음). 받아 적은 글은 검사 상세의 `transcript`로 볼 수 있다.
 
 `trial.completed` payload:
 
@@ -124,7 +138,8 @@ Temi 내장 TTS가 딱딱해서, 고정 대사는 Google Gemini TTS(Leda 목소�
 | `stopped` | bool | 구간 안에서 멈춤 감지 |
 | `max_persons` | int | 측정 중 화면 안 최대 인원 |
 | `min_confidence` | float \| null | 측정 중 관절점 신뢰도 최솟값(0~1) |
-| `word_count` | int \| null | 이중과제 발화 단어 수(9장 미정 사항 참고) |
+| `word_count` | int \| null | 이중과제 발화 단어 수. 서버가 녹음을 받아 적어 셀 때는 null로 보낸다(위 "음성 업로드") |
+| `speech_upload` | bool | 이 걷기의 녹음을 서버에 올린다. true면 서버가 받아 적을 때까지(최대 20초) 판정을 기다린다. 기본 false |
 | `error_count` | int \| null | 숫자 세기 오류 수 |
 | `early_start` | bool | `trial.go` 전에 시작선을 넘었다 |
 | `raw` | object | 디버깅용 자유 데이터 |
@@ -242,6 +257,8 @@ trial.completed ─▶ 유효 판정
 | POST | `/api/requests/{id}/answer` | 요청에 답하기 |
 | POST | `/api/chat` | 보호자 챗봇. `{resident_id, message}` → `{reply, generated_at, mock}`. Claude가 답하면 `mock: false`, 실패해 고정 응답이면 `mock: true`. 질문은 관찰 기록에도 남는다 |
 | GET | `/api/residents/{id}/chat` | 내 계정의 챗봇 대화(오래된 순). 항목 `{id, role: user\|assistant, text, mock, created_at}`. 다른 계정의 대화는 보이지 않는다 |
+| POST | `/api/trials/{id}/speech` | Pi 전용. 이중과제 걷기 녹음 업로드 → 받아 적기·채점(4장 "음성 업로드") |
+| POST | `/api/speech` | Pi 전용. 검사 중 짧은 말 녹음 업로드 → 받아 적어 `speech.heard`로 처리 |
 | POST | `/api/dev/sessions/start` | 개발용. RFID 없이 검사 시작. 요양사 계정만(보호자는 403) |
 | GET | `/api/health` | 연결된 기기 목록, 배포된 커밋(`commit`) |
 
@@ -280,8 +297,7 @@ A·B 모두 지난 3주 동안 월·수·금 오전에 검사한 가상 기록�
 
 | 항목 | 지금 상태 | 정해지면 바뀌는 것 |
 |---|---|---|
-| 이중과제 단어 수 출처 | Pi가 `trial.completed.word_count`로 보낸다고 가정 | STT를 서버에서 하면 서버가 받아 적은 글자로 센다 |
-| 음성 인식(STT) | Pi 마이크로 받는다(기본). STT 서비스와, Pi에서 받아 적을지 서버로 올려 받아 적을지는 미정 | 서버에서 하면 음성 업로드 API를 추가한다. 어느 쪽이든 서버에는 `speech.heard`로 들어온다 |
+| 녹음 보관·개인정보 | 녹음은 서버에 저장하지 않고 Gemini로만 보낸다. Google AI Studio 로그 저장 설정은 팀이 정한다 | 동의서·보관 기간이 정해지면 반영 |
 | 영상통화 방식 | Temi 내장 통화를 가정 | 안 되면 `temi.video_call` 처리 주체가 바뀐다 |
 | 앱 푸시 | 앱이 열려 있을 때 WebSocket으로만 받는다 | FCM을 쓰면 서버에 기기 토큰 등록 API를 추가한다 |
 | 에이전트 | 판단은 규칙, 해설·챗봇·분류는 Claude | 실기기 음성 인식 결과에 맞춰 분류 문구와 키워드를 조정한다(12월). 메시지 형식은 유지한다 |

@@ -57,7 +57,7 @@ section { background: var(--surface); border: 1px solid var(--line); border-radi
 .scenarios { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .scenarios button { width: 100%; text-align: left; padding: 8px 10px; display: block; }
 .scenarios small { display: block; color: var(--ink-2); font-size: 12px; }
-.scenarios button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.scenarios button[aria-pressed="true"], [data-mode-pick][aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
 
 .map-wrap { position: relative; }
 svg.map { width: 100%; height: auto; display: block; background: var(--surface-2); border-radius: 8px; }
@@ -135,13 +135,18 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
 <main>
   <div class="stack">
     <section>
-      <h2>시나리오</h2>
-      <p class="notice hidden" id="twinOff">이 서버에서는 시나리오와 가상 기기를 끈 상태입니다(TWIN_ENABLED=false). 상태판은 볼 수 있습니다.</p>
-      <ul class="scenarios" id="scenarios"></ul>
-      <div class="row" style="margin-top:10px">
+      <h2>모드</h2>
+      <p class="notice hidden" id="twinOff" style="margin-bottom:10px">이 서버에서는 시나리오와 가상 기기를 끈 상태입니다(TWIN_ENABLED=false). 상태판은 볼 수 있습니다.</p>
+      <div class="row" role="group" aria-label="모드">
+        <button type="button" data-mode-pick="manual" aria-pressed="true">수동 조작</button>
+        <button type="button" data-mode-pick="scenario" aria-pressed="false">시나리오</button>
         <button type="button" id="stop">중지하고 검사 종료</button>
       </div>
       <p class="notice hidden" id="scenarioError" style="margin-top:10px"></p>
+    </section>
+    <section class="hidden" id="scenarioPanel">
+      <h2>시나리오</h2>
+      <ul class="scenarios" id="scenarios"></ul>
     </section>
     <section>
       <h2>가상 기기</h2>
@@ -150,7 +155,7 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
         <button type="button" data-device="pi" aria-pressed="false">가상 Pi</button>
       </div>
     </section>
-    <section>
+    <section id="manualPanel">
       <h2>직접 조작</h2>
       <div class="stack" style="gap:10px">
         <div class="row">
@@ -357,6 +362,16 @@ async function act(fn) {
   try { renderScenarios(await fn()); }
   catch (err) { actionError = err.message; $("scenarioError").textContent = err.message; $("scenarioError").classList.remove("hidden"); }
 }
+
+// 수동 조작과 시나리오는 함께 쓰지 않는다. 기본은 수동 조작이고, 고른 모드는 브라우저에 기억한다.
+function setMode(mode) {
+  localStorage.setItem("twinMode", mode);
+  document.querySelectorAll("[data-mode-pick]").forEach((b) => { b.setAttribute("aria-pressed", String(b.dataset.modePick === mode)); });
+  $("scenarioPanel").classList.toggle("hidden", mode !== "scenario");
+  $("manualPanel").classList.toggle("hidden", mode !== "manual");
+}
+document.querySelectorAll("[data-mode-pick]").forEach((b) => { b.onclick = () => setMode(b.dataset.modePick); });
+setMode(localStorage.getItem("twinMode") === "scenario" ? "scenario" : "manual");
 
 document.querySelectorAll("[data-device]").forEach((b) => {
   b.onclick = () => act(() => api(`/api/twin/devices/${b.dataset.device}`,

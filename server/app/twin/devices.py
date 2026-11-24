@@ -111,6 +111,18 @@ class VirtualDevices:
     async def send(self, device: str, type_: str, payload: Message | None = None, reply_to: str | None = None) -> None:
         await agent.handle(device, Envelope(type=type_, payload=payload or {}, reply_to=reply_to))
 
+    async def hear(self, text: str, reply_to: str | None = None) -> None:
+        """참가자가 한 말을 보낸다. 기본 음성 입력인 Pi 마이크로 보내고, 가상 Pi가 없으면 가상 Temi('Temi 내장' 음성 입력)로 보낸다.
+
+        Pi는 reply_to를 붙이지 않는다(서버는 reply_to가 아니라 지금 단계로 대답을 가른다).
+        """
+        if self.attached("pi"):
+            await self.send("pi", "speech.heard", {"text": text})
+        elif self.attached("temi"):
+            await self.send("temi", "speech.heard", {"text": text}, reply_to)
+        else:
+            raise LookupError("참가자 말을 보낼 가상 Pi가 연결돼 있지 않습니다.")
+
     def _spawn(self, coro: Any) -> None:
         task = asyncio.create_task(coro)
         self._tasks.add(task)

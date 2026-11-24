@@ -7,7 +7,7 @@ walk에 조건별 측정 결과를 주면 trial.go를 받았을 때 그 결과�
 
 import asyncio
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from typing import Any, Literal
 
 from ..agent import agent
 from ..hub import hub
@@ -21,8 +21,20 @@ GOOD_WALK: dict[str, Message] = {
     "animals": {"speed_mps": 1.20, "duration_s": 3.3, "max_persons": 1, "min_confidence": 0.9, "word_count": 8},
     "countdown": {"speed_mps": 1.15, "duration_s": 3.5, "max_persons": 1, "min_confidence": 0.9, "word_count": 7},
 }
-SLOW_ANIMALS: Message = {**GOOD_WALK["animals"], "speed_mps": 0.88, "duration_s": 4.5}
-SLOW_COUNTDOWN: Message = {**GOOD_WALK["countdown"], "speed_mps": 0.88, "duration_s": 4.5}
+# 트윈에서 버튼으로 고르는 걷기 결과. 조건별 정상 결과(GOOD_WALK)에 덮어쓴다. 이름은 서버의 무효 사유와 같다.
+WalkKind = Literal["good", "slow", "stopped", "out_of_frame", "multiple_persons", "task_not_engaged",
+                   "no_measurement"]
+WALK_CHANGES: dict[WalkKind, Message] = {
+    "good": {},
+    "slow": {"speed_mps": 0.88, "duration_s": 4.5},
+    "stopped": {"stopped": True},
+    "out_of_frame": {"min_confidence": 0.3},
+    "multiple_persons": {"max_persons": 2},
+    "task_not_engaged": {"word_count": 1},
+    "no_measurement": {"speed_mps": None, "duration_s": None},
+}
+SLOW_ANIMALS: Message = {**GOOD_WALK["animals"], **WALK_CHANGES["slow"]}
+SLOW_COUNTDOWN: Message = {**GOOD_WALK["countdown"], **WALK_CHANGES["slow"]}
 SLOW_DUAL_WALK: dict[str, Message] = {**GOOD_WALK, "animals": SLOW_ANIMALS, "countdown": SLOW_COUNTDOWN}
 GAME_RESULT: Message = {"rt_ms": [352, 410, 388, 365, 420, 398], "correct": [True, True, False, True, True, True]}
 TEMI_GAMES = frozenset({"stroop", "memory"})
@@ -76,6 +88,7 @@ class VirtualDevices:
         self.temi = VirtualSocket(self._temi_frame)
         self.pi = VirtualSocket(self._pi_frame)
         self._conditions: dict[int, str] = {}
+        self._walking: set[int] = set()
         self._tasks: set[asyncio.Task[None]] = set()
         for device in attach:
             self.attach(device)
@@ -141,26 +154,37 @@ class VirtualDevices:
                 result = self.walk[self._conditions[payload["trial_id"]]]
                 if isinstance(result, list):
                     result = result.pop(0) if len(result) > 1 else result[0]
-                self._spawn(self._walk(payload["trial_id"], result))
+                self.start_walk(payload["trial_id"], result)
             case "game.start" if self.game_result is not None:
                 self._emit(4.0, "pi", "game.completed", {"game_id": payload["game_id"], **self.game_result})
 
+    def start_walk(self, trial_id: int, result: Message) -> bool:
+        """trial_id를 result대로 걷는다. 그 trial을 이미 걷고 있으면 False."""
+        if trial_id in self._walking:
+            return False
+        self._walking.add(trial_id)
+        self._spawn(self._walk(trial_id, result))
+        return True
+
     async def _walk(self, trial_id: int, result: Message) -> None:
-        if self.pace > 0:
-            speed = result.get("speed_mps") or 1.0
-            duration = COURSE_M / speed + (1.5 if result.get("stopped") else 0.0)
-            ticks = max(int(duration / 0.1), 1)
-            for i in range(1, ticks):
+        try:
+            if self.pace > 0:
+                speed = result.get("speed_mps") or 1.0
+                duration = COURSE_M / speed + (1.5 if result.get("stopped") else 0.0)
+                ticks = max(int(duration / 0.1), 1)
+                for i in range(1, ticks):
+                    await self._pause(duration / ticks)
+                    if not self.attached("pi"):
+                        return
+                    position = min(speed * duration * i / ticks, COURSE_M)
+                    if result.get("stopped") and position > COURSE_M / 2:
+                        position = max(COURSE_M / 2, position - 1.5 * speed)
+                    await self.send("pi", "trial.progress", {"trial_id": trial_id, "position_m": round(position, 2)})
                 await self._pause(duration / ticks)
-                if not self.attached("pi"):
-                    return
-                position = min(speed * duration * i / ticks, COURSE_M)
-                if result.get("stopped") and position > COURSE_M / 2:
-                    position = max(COURSE_M / 2, position - 1.5 * speed)
-                await self.send("pi", "trial.progress", {"trial_id": trial_id, "position_m": round(position, 2)})
-            await self._pause(duration / ticks)
-        if self.attached("pi"):
-            await self.send("pi", "trial.completed", {"trial_id": trial_id, **result})
+            if self.attached("pi"):
+                await self.send("pi", "trial.completed", {"trial_id": trial_id, **result})
+        finally:
+            self._walking.discard(trial_id)
 
     async def drain(self) -> None:
         while self._tasks:

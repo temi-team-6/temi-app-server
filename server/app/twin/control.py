@@ -4,7 +4,7 @@ from typing import Any
 
 from ..agent import agent
 from ..hub import hub
-from .devices import GAME_RESULT, TEMI_GAMES, VirtualDevices
+from .devices import GAME_RESULT, GOOD_WALK, TEMI_GAMES, WALK_CHANGES, VirtualDevices, WalkKind
 from .monitor import monitor
 from .scenarios import SCENARIOS, Ctx
 
@@ -99,7 +99,22 @@ class Twin:
         await self._require("temi").send("temi", "speech.heard", {"text": text}, reply_to)
 
     async def rfid(self, tag: str) -> None:
-        await self._require("pi").send("pi", "rfid.scanned", {"tag": tag})
+        devices = self._require("pi")
+        devices.walk = None  # 직접 조작할 때는 걷기 결과도 버튼(walk)으로 보낸다. 앞서 돌린 시나리오의 결과를 쓰지 않는다.
+        await devices.send("pi", "rfid.scanned", {"tag": tag})
+
+    async def walk(self, kind: WalkKind) -> None:
+        """출발 신호(trial.go)를 받은 지금 trial을 가상 Pi가 kind 결과로 걷는다."""
+        devices = self._require("pi")
+        st = agent.state
+        trial_id = st.trial_id if st is not None else None
+        condition = st.trial_condition if st is not None else None
+        if trial_id is None or condition is None or not any(
+            m["payload"]["trial_id"] == trial_id for m in devices.pi.of_type("trial.go")
+        ):
+            raise TwinError("출발 신호를 받은 걷기가 없습니다.")
+        if not devices.start_walk(trial_id, {**GOOD_WALK[condition], **WALK_CHANGES[kind]}):
+            raise TwinError("이미 걷는 중입니다.")
 
     async def answer_call(self, answered: bool) -> None:
         devices = self._require("temi")

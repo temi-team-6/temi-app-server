@@ -8,7 +8,7 @@ from app.agent import agent
 from app.config import settings
 from app.db import SessionLocal
 from app.hub import hub
-from app.models import AgentRequest, TestSession
+from app.models import AgentRequest, TestSession, Trial, TrialStatus
 from app.twin.control import Twin, TwinError
 from app.twin.monitor import monitor
 from app.twin.scenarios import SCENARIOS
@@ -60,6 +60,38 @@ async def test_scenario_uses_a_real_temi_but_will_not_drive_it(fresh_state: None
     await run(twin, "normal")
 
     assert hub.devices["temi"] is real_temi.temi
+    await real_temi.drain()
+
+
+async def test_manual_walk_drives_the_current_trial_with_a_real_temi(fresh_state: None) -> None:
+    real_temi = FakeDevices(attach=("temi",))
+    real_temi.temi.virtual = False  # type: ignore[misc]
+    twin = Twin(pace=0)
+    await run(twin, "normal")  # 이 시나리오의 걷기 결과가 남아 있어도 직접 조작에서는 쓰지 않아야 한다
+    assert twin.devices is not None
+    pi = twin.devices.pi
+
+    with pytest.raises(TwinError, match="출발 신호"):
+        await twin.walk("good")
+    mark = pi.mark()
+    await twin.rfid("RFID-A-0001")
+    first = await pi.wait_for("trial.go", after=mark)
+    await twin.walk("stopped")
+    with pytest.raises(TwinError, match="이미 걷는 중"):
+        await twin.walk("good")
+    retry = await pi.wait_for("trial.start", lambda m: m["payload"]["attempt"] == 2, after=mark)
+    retry_id = retry["payload"]["trial_id"]
+    await pi.wait_for("trial.go", lambda m: m["payload"]["trial_id"] == retry_id, after=mark)
+    await twin.walk("good")
+    await pi.wait_for("trial.start", lambda m: m["payload"]["condition"] == "animals", after=mark)
+
+    async with SessionLocal() as db:
+        stopped = await db.get(Trial, first["payload"]["trial_id"])
+        valid = await db.get(Trial, retry_id)
+    assert stopped is not None and stopped.invalid_reason == "stopped"
+    assert valid is not None and valid.status == TrialStatus.VALID
+    assert hub.devices["temi"] is real_temi.temi
+    await twin.stop()
     await real_temi.drain()
 
 

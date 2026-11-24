@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import Callable
 
@@ -17,7 +18,8 @@ from .fakes import GOOD_WALK, FakeDevices, Message
 PI = {"Authorization": f"Bearer {settings.pi_token}", "Content-Type": "audio/wav"}
 # Pi가 단어 수를 세지 않고 녹음만 올리는 걷기(이중과제 trial.completed에 word_count가 없다)
 NO_COUNT_WALK: dict[str, Message] = {
-    cond: {k: v for k, v in GOOD_WALK[cond].items() if k != "word_count"} for cond in GOOD_WALK
+    cond: {**{k: v for k, v in GOOD_WALK[cond].items() if k != "word_count"}, "speech_upload": cond != "single"}
+    for cond in GOOD_WALK
 }
 
 
@@ -210,6 +212,17 @@ async def test_walk_goes_on_without_transcript_after_waiting(
         assert session is not None
         trials = (await db.scalars(select(Trial).where(Trial.session_id == session.id))).all()
     assert len(trials) == 3 and all(t.status == TrialStatus.VALID and t.word_count is None for t in trials)
+
+
+async def test_pi_that_does_not_upload_is_not_waited_for(
+    devices: FakeDevices, fake_transcribe: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 녹음을 올리지 않는 예전 Pi(speech_upload 없음, word_count도 없음)는 키가 있어도 기다리지 않는다
+    monkeypatch.setattr(settings, "stt_wait_s", 30.0)
+    devices.walk = {cond: {k: v for k, v in msg.items() if k != "speech_upload"} for cond, msg in NO_COUNT_WALK.items()}
+
+    await devices.send("pi", "rfid.scanned", {"tag": "RFID-B-0002"})
+    await asyncio.wait_for(devices.temi.wait_for("temi.show", lambda m: m["payload"].get("screen") == "idle"), 5)
 
 
 async def test_speech_upload_rejects_wrong_device_or_trial(

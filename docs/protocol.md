@@ -114,8 +114,8 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `POST /api/speech` | 검사 중 참가자가 짧게 말했을 때(통증 질문의 대답 등). 말한 덩어리마다 하나. 이중과제로 걷는 동안의 말은 위 걷기 녹음에 들어가므로 따로 보내지 않는다 | 받아 적어 `speech.heard`와 똑같이 처리(Temi 목소리 거르기 포함). 응답 `{text, model}` |
 
 - 인증: `Authorization: Bearer <Pi 토큰>`. 본문은 녹음 파일 그대로(멀티파트 아님), `Content-Type`에 형식(`audio/wav`, `audio/mp4`(m4a), `audio/mpeg`). 10MB까지.
-- 이중과제 걷기: Pi는 `trial.completed`의 `word_count`를 **비워(null) 보내고** 녹음을 올린다. 서버는 받아 적기가 끝날 때까지 최대 20초(`STT_WAIT_S`) 판정을 기다리고, 그 뒤 `word_count` < 3이면 `task_not_engaged`로 다시 걷게 한다. 업로드와 `trial.completed`는 어느 쪽이 먼저 와도 된다. 20초 안에 못 받아 적으면 단어 수 없이 판정한다.
-- Pi가 `word_count`를 채워 보내면 지금처럼 그 값을 쓰고 기다리지 않는다(트윈의 가상 Pi가 이 방식).
+- 이중과제 걷기: Pi는 `trial.completed`에 **`speech_upload: true`**를 넣고 `word_count`는 **비워(null) 보내고** 녹음을 올린다. 서버는 받아 적기가 끝날 때까지 최대 20초(`STT_WAIT_S`) 판정을 기다리고, 그 뒤 `word_count` < 3이면 `task_not_engaged`로 다시 걷게 한다. 업로드와 `trial.completed`는 어느 쪽이 먼저 와도 된다. 20초 안에 못 받아 적으면 단어 수 없이 판정한다.
+- `speech_upload`가 없거나 false면(녹음을 올리지 않는 지금의 Pi) 기다리지 않고 지금처럼 판정한다. 그래서 이 기능을 머지해도 Pi를 바꾸기 전까지는 동작이 그대로다. Pi가 `word_count`를 채워 보내도 그 값을 쓰고 기다리지 않는다(트윈의 가상 Pi가 이 방식).
 - 채점: 동물은 서로 다른 동물 이름 수(반복은 한 번, '개·소·말' 같은 한 글자는 따로 떨어진 단어일 때만). 숫자 세기는 말한 숫자 개수가 `word_count`, 바로 앞에 말한 숫자에서 3을 뺀 값이 아닌 숫자 수가 `error_count`(첫 숫자는 100이나 97이면 맞음). 받아 적은 글은 검사 상세의 `transcript`로 볼 수 있다.
 
 `trial.completed` payload:
@@ -129,6 +129,7 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 | `max_persons` | int | 측정 중 화면 안 최대 인원 |
 | `min_confidence` | float \| null | 측정 중 관절점 신뢰도 최솟값(0~1) |
 | `word_count` | int \| null | 이중과제 발화 단어 수. 서버가 녹음을 받아 적어 셀 때는 null로 보낸다(위 "음성 업로드") |
+| `speech_upload` | bool | 이 걷기의 녹음을 서버에 올린다. true면 서버가 받아 적을 때까지(최대 20초) 판정을 기다린다. 기본 false |
 | `error_count` | int \| null | 숫자 세기 오류 수 |
 | `early_start` | bool | `trial.go` 전에 시작선을 넘었다 |
 | `raw` | object | 디버깅용 자유 데이터 |

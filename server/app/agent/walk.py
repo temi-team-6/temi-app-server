@@ -174,7 +174,7 @@ class WalkFlow(AgentCore):
             log.warning("ignored trial.completed for inactive trial %s", m.trial_id)
             return
         self._cancel_gate()
-        if m.word_count is None and stt.enabled() and st.trial_condition != Condition.SINGLE.value:
+        if m.speech_upload and m.word_count is None and stt.enabled() and st.trial_condition != Condition.SINGLE.value:
             # 걸음 측정은 끝났고, Pi가 올린 녹음을 서버가 받아 적어 단어 수를 셀 때까지 판정을 미룬다.
             # 기다리는 동안 Pi의 다른 메시지(안전 신호 등)를 막지 않도록 따로 돌린다. 중단되면 이 작업도 취소된다.
             st.gate = asyncio.create_task(self._complete_trial(m, wait_for_speech=True))

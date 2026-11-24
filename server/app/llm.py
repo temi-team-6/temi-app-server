@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 from anthropic import APIError, AsyncAnthropic
-from anthropic.types import MessageParam
+from anthropic.types import MessageParam, ToolParam
 
 from .config import settings
 
@@ -28,6 +28,10 @@ def _get_client() -> AsyncAnthropic | None:
     if _client is None:
         _client = AsyncAnthropic(api_key=settings.anthropic_api_key, timeout=settings.llm_timeout_s, max_retries=1)
     return _client
+
+
+def available() -> bool:
+    return _get_client() is not None
 
 
 def _alternating(history: Sequence[Turn]) -> list[MessageParam]:
@@ -80,6 +84,46 @@ def trim_to_sentence(text: str) -> str:
     """마지막 완결 문장 뒤를 버린다. 완결된 문장이 없으면 빈 문자열."""
     ends = [m.end() for m in SENTENCE_END.finditer(text)]
     return text[:ends[-1]].strip() if ends else ""
+
+
+async def decide(system: str, prompt: str, actions: Sequence[str], *, timeout: float) -> dict[str, str] | None:
+    """도구 호출로 actions 중 하나와 Temi가 할 말, 고른 이유를 받는다. 실패하거나 형식이 맞지 않으면 None."""
+    client = _get_client()
+    if client is None:
+        return None
+    tool: ToolParam = {
+        "name": "act",
+        "description": "다음 행동 하나와 Temi가 참가자에게 할 말을 정한다.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": list(actions)},
+                "say": {"type": "string", "description": "Temi가 참가자에게 할 말. 한국어 존댓말 1~2문장"},
+                "reason": {"type": "string", "description": "이 행동을 고른 이유. 요양사가 읽는 한 문장"},
+            },
+            "required": ["action", "say", "reason"],
+        },
+    }
+    model = settings.llm_model_fast
+    try:
+        message = await client.messages.create(
+            model=model,
+            max_tokens=300,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "act"},
+            timeout=timeout,
+        )
+    except APIError as e:
+        log.warning("LLM decision failed (%s), falling back to rules: %s", model, e)
+        return None
+    block = next((b for b in message.content if b.type == "tool_use"), None)
+    data = block.input if block is not None else None
+    if not isinstance(data, dict) or not all(isinstance(data.get(k), str) for k in ("action", "say", "reason")):
+        log.warning("LLM decision has no usable tool call: %r", data)
+        return None
+    return {k: str(data[k]).strip() for k in ("action", "say", "reason")}
 
 
 async def classify(instruction: str, text: str, labels: Sequence[str], *, timeout: float = 5.0) -> str | None:

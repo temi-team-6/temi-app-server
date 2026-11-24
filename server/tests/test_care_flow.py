@@ -74,10 +74,13 @@ async def test_severe_pain_calls_staff_in_order_then_alerts(devices: FakeDevices
     assert (session.status, session.end_reason) == (SessionStatus.ABORTED, "emergency_unanswered")
 
 
-async def test_refusal_ends_session(devices: FakeDevices) -> None:
+async def test_refusal_ends_session_and_tells_staff(devices: FakeDevices) -> None:
+    staff = connect_app(await get_user("staff1"))
     await start_first_walk(devices)
 
     await devices.send("temi", "speech.heard", {"text": "오늘은 하기 싫어"})
 
     session = await current_session()
     assert (session.status, session.end_reason) == (SessionStatus.ABORTED, "refused")
+    request = await staff.wait_for("request.created")
+    assert request["payload"]["topic"] == "refused"

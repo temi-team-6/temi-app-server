@@ -37,7 +37,8 @@ uv run poe             # 명령 목록
 - **에이전트는 흐름별 파일**이다(`app/agent/`). 자기 기능의 흐름 파일만 고치고, 공통 도구(`core.py`)를 바꾸면 PR에 적는다.
 - **테스트:** `tests/fakes.py`의 `FakeDevices`가 Temi·Pi를, `connect_app`이 앱 연결을 흉내 낸다. 새 흐름을 넣으면 `tests/test_walk_flow.py`처럼 시나리오 테스트를 하나 추가한다.
 - **API·메시지 형식(계약):** 바꾸면 `schemas.py`/`protocol.py`와 `docs/protocol.md`를 같은 PR에서 고친다. 기존 경로·필드는 지우거나 바꾸지 않고 추가만 한다. 앱이 아는 필드가 사라지면 앱이 깨진다.
-- **LLM:** Claude 호출은 `app/llm.py`의 `complete()`만 쓴다. `None`이 오면(키 없음·실패·시간 초과) 기존 규칙 응답으로 진행한다. 안전 신호 처리에는 쓰지 않는다. 테스트는 키 없이 돈다.
+- **LLM:** Claude 호출은 `app/llm.py`에만 둔다(`complete`, `classify`, 검사 진행 AI의 도구 호출 `decide`). `None`이 오면(키 없음·실패·시간 초과) 기존 규칙 응답으로 진행한다. 안전 신호 처리에는 쓰지 않는다. 테스트는 키 없이 돈다(AI 판단 테스트는 `tests/test_ai_agent.py`처럼 `llm.decide`를 고정 응답으로 바꾼다).
+- **검사 진행 AI:** 검사 중 판단과 Temi 대사는 Claude가 맡고, 안전·측정 판정·보호자 질문은 규칙이다(`app/agent/ai.py`의 가드레일, `docs/protocol.md`). 시연 때 끄려면 `.env`에 `AGENT_AI_ENABLED=false`.
 
 ## 계정·어르신 관리
 
@@ -145,7 +146,7 @@ server/tests/       시나리오·API·마이그레이션 테스트 (fakes.py: �
 server/app/
   main.py      앱 생성, WebSocket 엔드포인트
   api.py       REST API
-  agent/       임시 규칙 에이전트
+  agent/       검사 진행 에이전트(AI 판단 + 규칙 가드레일·대체 경로)
     core.py      세션 상태, 기기·앱 전송, 관찰 기록·요청 생성
     walk.py      보행 검사 진행, 재측정, 기준선 비교
     care.py      검사 중 발화, 안전 신호, 영상통화, 게임

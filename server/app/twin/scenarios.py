@@ -1,5 +1,6 @@
 """시연 장면을 가상 기기로 끝까지 돌리는 시나리오. 트윈 화면의 버튼과 테스트가 같은 시나리오를 쓴다."""
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -38,6 +39,16 @@ class Ctx:
         mark = monitor.mark()
         await self.scan(resident)
         await self.until_idle(mark)
+
+    async def answer_if_asked(self, mark: int, answer: str) -> None:
+        """AI는 그만둬지 되물을 수 있다. 되물으면(temi.ask) answer로 답하고, 바로 끝나면 그대로 둔다."""
+        asked = asyncio.create_task(self.until("temi", "temi.ask", mark))
+        idle = asyncio.create_task(self.until_idle(mark))
+        done, pending = await asyncio.wait({asked, idle}, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        if asked in done and asked.exception() is None:
+            await self.say(answer, reply_to=asked.result()["id"])
 
     async def interrupt_first_walk(self, resident: str, text: str) -> int:
         mark = monitor.mark()
@@ -100,6 +111,7 @@ async def question(ctx: Ctx) -> None:
 async def pain_mild(ctx: Ctx) -> None:
     ctx.devices.walk = None
     ctx.devices.game_result = GAME_RESULT
+    ctx.devices.call_answers = [True]  # AI가 심하다고 보면 통화로 간다
     mark = await ctx.interrupt_first_walk("A", "다리가 좀 아파요")
     ask = await ctx.until("temi", "temi.ask", mark)
     await ctx.say("무릎이 조금 시큰거려요", reply_to=ask["id"])
@@ -128,6 +140,7 @@ async def fall(ctx: Ctx) -> None:
 async def refuse(ctx: Ctx) -> None:
     ctx.devices.walk = None
     mark = await ctx.interrupt_first_walk("B", "오늘은 하기 싫어")
+    await ctx.answer_if_asked(mark, "응, 그만할래")
     await ctx.until_idle(mark)
 
 

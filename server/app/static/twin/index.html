@@ -241,6 +241,7 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
       <label><input type="checkbox" data-filter="temi" checked> Temi</label>
       <label><input type="checkbox" data-filter="pi" checked> Pi</label>
       <label><input type="checkbox" data-filter="app" checked> 앱</label>
+      <label><input type="checkbox" data-filter="ai" checked> AI</label>
     </div>
     <ol class="timeline" id="timeline"></ol>
   </section>
@@ -270,7 +271,7 @@ function speakTemi(entry) {
 }
 const COURSE = { x0: 120, x1: 520, y: 170, meters: 4 };
 const CONDITION = { single: "그냥 걷기", animals: "동물 이름 말하며", countdown: "숫자 거꾸로 세며" };
-const MODE = { walk: "보행 검사", pain_check: "통증 확인", video_call: "영상통화", game: "게임" };
+const MODE = { walk: "보행 검사", pain_check: "통증 확인", confirm_stop: "그만할지 확인", video_call: "영상통화", game: "게임" };
 const PHASE = { approaching: "시작선으로 이동", ready: "시작선 앞", walking: "걷는 중", done: "도착", aborted: "측정 취소" };
 let token = sessionStorage.getItem("twinToken");
 let ws = null, pingTimer = null, entries = [], twinEnabled = false;
@@ -457,6 +458,8 @@ function render(msg) {
     if (agent.waiting) rows.push(["기다리는 신호", agent.waiting]);
     if (agent.confirmed) rows.push(["확인 재측정", "진행함"]);
     if (agent.call_queue.length) rows.push(["다음 통화", agent.call_queue.join(" → ")]);
+    const d = agent.ai_decision;
+    if (d) rows.push(["AI 판단", d.by === "ai" ? `${d.point} → ${d.action} · ${d.reason}` : `${d.point} → 규칙(AI 판단 없음)`]);
   } else rows.push(["검사", "진행 중인 검사 없음"]);
   rows.push(["Temi", `${world.temi.location}${world.temi.target ? ` → ${world.temi.target}` : ""} · 화면 ${world.temi.screen}`]);
   if (world.temi.call) rows.push(["영상통화", `${world.temi.call.name} · ${{ ringing: "거는 중", answered: "연결됨", no_answer: "안 받음" }[world.temi.call.state]}`]);
@@ -484,7 +487,7 @@ function renderTimeline() {
     if (!shown.has(peerGroup(e.peer))) continue;
     const li = document.createElement("li"); li.className = `${e.dir}${e.dropped ? " dropped" : ""}`;
     const t = document.createElement("span"); t.className = "t"; t.textContent = clock(e.t);
-    const peer = document.createElement("span"); peer.className = "peer"; peer.textContent = `${e.dir === "in" ? "←" : "→"} ${e.peer.replace(/^app:/, "앱 ")}`;
+    const peer = document.createElement("span"); peer.className = "peer"; peer.textContent = `${{ in: "←", out: "→" }[e.dir] || "·"} ${e.peer.replace(/^app:/, "앱 ")}`;
     const type = document.createElement("span"); type.className = "type"; type.textContent = e.type + (e.dropped ? " (전달 안 됨)" : "");
     const payload = document.createElement("span"); payload.className = "payload";
     const text = JSON.stringify(e.payload); payload.textContent = text === "{}" ? "" : text.length > 160 ? `${text.slice(0, 160)}…` : text;

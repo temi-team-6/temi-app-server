@@ -48,6 +48,7 @@ RETRY_SAY = {
     "interrupted": "다시 처음부터 해볼게요.",
 }
 DUAL_LABEL = {Condition.ANIMALS: "동물 이름 말하며 걷기", Condition.COUNTDOWN: "숫자 거꾸로 세며 걷기"}
+CONDITION_LABEL = {Condition.SINGLE: "그냥 걷기", **DUAL_LABEL}
 TOD_LABEL = {"morning": "오전", "afternoon": "오후", "evening": "저녁"}
 EXPLAIN_SYSTEM = """너는 보행 검사 결과를 보호자에게 설명하는 짧은 글을 쓴다.
 - 주어진 초안의 사실과 수치만 쓴다. 새 수치, 원인 추측, 해석을 더하지 않는다.
@@ -92,7 +93,9 @@ class WalkFlow(AgentCore):
             db.add(session)
             await db.commit()
             self.state = SessionState(session.id, resident.id, resident.name)
-        await self._temi("temi.say", {"text": f"{resident.name}님, 안녕하세요. 오늘도 걷기 검사를 해볼게요."})
+        greeting = await self._line("greet", "어르신이 카드를 찍어 오늘 보행 검사를 시작한다. 인사하고 검사를 시작한다고 말한다.",
+                                    f"{resident.name}님, 안녕하세요. 오늘도 걷기 검사를 해볼게요.")
+        await self._temi("temi.say", {"text": greeting})
         await self._start_trial(WALK_PLAN[0], attempt=1)
         return self.state.session_id
 
@@ -114,6 +117,7 @@ class WalkFlow(AgentCore):
         st.mode = "walk"
         st.trial_id = trial.id
         st.trial_condition = condition.value
+        st.trial_attempt = attempt
         st.ready = asyncio.Event()
         await self._pi("trial.start", {"trial_id": trial.id, "condition": condition.value, "attempt": attempt})
         await self._temi("temi.show", {"screen": "walk", "condition": condition.value, "attempt": attempt})
@@ -210,17 +214,29 @@ class WalkFlow(AgentCore):
         await self._after_trial(trial.condition, trial.attempt, reason)
 
     async def _after_trial(self, condition: Condition, attempt: int, reason: str | None) -> None:
+        """무효 사유는 규칙이 정하고, 다시 재지 건너뛸지와 그 말은 AI가 정한다. 다시 재는 횟수는 MAX_ATTEMPTS를 넘지 못한다."""
         st = self._require_state()
         if reason is None:
             await self._next_condition()
-        elif attempt < MAX_ATTEMPTS:
-            await self._temi("temi.say", {"text": RETRY_SAY[reason] + " 다시 해볼게요."})
+            return
+        actions = {"skip": "이 걷기는 오늘 건너뛰고 다음으로 넘어간다"}
+        if attempt < MAX_ATTEMPTS:
+            actions = {"retry": f"같은 걷기를 다시 잰다(최대 {MAX_ATTEMPTS}회)", **actions}
+        decision = await self._decide(
+            "invalid_trial",
+            f"{CONDITION_LABEL[condition]} {attempt}회째 측정이 무효다(사유 {reason}). 규칙 대사라면: '{RETRY_SAY[reason]}'",
+            actions,
+        )
+        action = decision.action if decision else ("retry" if "retry" in actions else "skip")
+        if action == "retry":
+            await self._temi("temi.say", {"text": decision.say if decision else RETRY_SAY[reason] + " 다시 해볼게요."})
             await self._start_trial(condition, attempt + 1)
-        else:
-            await self._observe(st.resident_id, ObservationSource.AGENT,
-                                f"{condition.value} 조건 측정이 {MAX_ATTEMPTS}회 무효({reason})여서 건너뜀")
-            await self._temi("temi.say", {"text": "이 걷기는 오늘 건너뛸게요."})
-            await self._next_condition()
+            return
+        why = f" AI 판단: {decision.reason}" if decision else ""
+        await self._observe(st.resident_id, ObservationSource.AGENT,
+                            f"{condition.value} 조건 측정이 {attempt}회 무효({reason})여서 건너뜀.{why}")
+        await self._temi("temi.say", {"text": decision.say if decision else "이 걷기는 오늘 건너뛸게요."})
+        await self._next_condition()
 
     async def _next_condition(self) -> None:
         st = self._require_state()
@@ -273,10 +289,14 @@ class WalkFlow(AgentCore):
             condition = Condition(exceeded[0])
             await self._observe(st.resident_id, ObservationSource.AGENT,
                                 f"{DUAL_LABEL[condition]}만 개인 기준보다 높아 한 번 더 측정해 확인한다.", data=result)
-            await self._temi("temi.say", {"text": "한 번 더 확인해 볼게요."})
+            await self._temi("temi.say", {"text": await self._line(
+                "recheck", f"{DUAL_LABEL[condition]}을 한 번 더 쟰다. 결과 해석은 말하지 않는다.",
+                "한 번 더 확인해 볼게요.")})
             await self._start_trial(condition, attempt=await self._next_attempt(condition))
             return
-        await self._temi("temi.say", {"text": "오늘 걷기 검사를 모두 마쳤어요. 수고하셨어요."})
+        await self._temi("temi.say", {"text": await self._line(
+            "closing", "오늘 보행 검사를 모두 마쳤다. 수고를 칭찬한다. 결과 해석은 말하지 않는다.",
+            "오늘 걷기 검사를 모두 마쳤어요. 수고하셨어요.")})
         if consistent:
             explanation = await explain_walk(result, st.confirmed)
             labels = ", ".join(DUAL_LABEL[Condition(c)] for c in exceeded)

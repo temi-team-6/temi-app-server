@@ -5,6 +5,7 @@
 - walk.py: 보행 검사 진행과 기준선 비교
 - care.py: 검사 중 발화, 안전 신호, 영상통화, 게임
 - guardian.py: 앱 답변 처리와 보호자 답변 판단
+- ai.py: 검사 진행 AI의 프롬프트와 가드레일(판단 호출은 core.py의 _decide)
 """
 
 from typing import Any
@@ -35,7 +36,10 @@ from .guardian import GuardianFlow
 
 
 class Agent(GuardianFlow):
-    """규칙 기반 임시 에이전트. 이벤트 입출력은 실제 LLM 에이전트와 같고, 판단만 고정 규칙이다."""
+    """검사 진행 에이전트. 검사 중 판단과 Temi 대사는 AI(ai.py)가 맡고, 안전·측정 판정·보호자 질문은 규칙이다.
+
+    AI를 끄거나(AGENT_AI_ENABLED=false) 호출이 실패하면 같은 자리를 규칙대로 진행한다.
+    """
 
     def snapshot(self) -> dict[str, Any]:
         """트윈 상태판에 보여 줄 진행 중인 검사의 단계."""
@@ -60,6 +64,7 @@ class Agent(GuardianFlow):
             "confirmed": st.confirmed,
             "waiting": waiting,
             "call_queue": [name for _, name in st.call_queue],
+            "ai_decision": st.last_decision,
         }
 
     async def abort_session(self, reason: str) -> None:

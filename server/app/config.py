@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     llm_model_fast: str = "claude-haiku-5-5"
     llm_model_smart: str = "claude-sonnet-5-5"
     llm_timeout_s: float = 10.0
+    # 검사 진행 AI(app/agent/ai.py): 검사 중 판단과 Temi 대사를 Claude가 맡는다. false면 규칙 에이전트만 쓴다.
+    agent_ai_enabled: bool = True
+    # 판단 한 번을 기다리는 시간. 넘기면 그 판단은 규칙대로 한다(참가자가 기다리는 시간이다).
+    agent_ai_timeout_s: float = 6.0
     # 음성 받아 적기(app/stt.py). 비어 있으면 받아 적지 않고 Pi가 보낸 word_count만 쓴다.
     gemini_api_key: str = ""
     gemini_stt_model: str = "gemini-3.6-flash"

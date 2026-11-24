@@ -199,8 +199,10 @@ class VirtualDevices:
             self._walking.discard(trial_id)
 
     async def drain(self) -> None:
-        while self._tasks:
-            await asyncio.gather(*self._tasks)
+        # 끝난 작업은 _tasks에서 빠지는 콜백이 아직 돌지 않았을 수 있다. 끝난 것만 모아 gather하면 이벤트 루프에 양보하지 않고
+        # 바로 돌아와(Python 3.14) 그 콜백이 영원히 돌지 못한다. 아직 도는 작업만 기다린다.
+        while pending := [task for task in self._tasks if not task.done()]:
+            await asyncio.gather(*pending)
 
     def cancel(self) -> None:
         for task in list(self._tasks):

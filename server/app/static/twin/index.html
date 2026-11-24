@@ -158,6 +158,15 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
           <button type="button" data-rfid="RFID-B-0002">B 카드</button>
           <button type="button" data-rfid="UNKNOWN">미등록 카드</button>
         </div>
+        <div class="row" role="group" aria-label="가상 Pi 걷기 결과(출발 신호 뒤)">
+          <button type="button" data-walk="good">정상 걷기</button>
+          <button type="button" data-walk="slow">느리게</button>
+          <button type="button" data-walk="stopped">멈춤</button>
+          <button type="button" data-walk="out_of_frame">화면 밖</button>
+          <button type="button" data-walk="multiple_persons">2명</button>
+          <button type="button" data-walk="task_not_engaged">말 안 함</button>
+          <button type="button" data-walk="no_measurement">측정 실패</button>
+        </div>
         <form class="row" id="speechForm">
           <input id="speech" placeholder="참가자가 한 말" style="flex:1; min-width:0" aria-label="참가자가 한 말">
           <button type="submit">말하기</button>
@@ -320,7 +329,7 @@ async function refreshStatus() {
     twinEnabled = false; $("twinOff").classList.remove("hidden");
     renderScenarios({ scenarios: [], running: null });
   }
-  document.querySelectorAll("[data-device],[data-rfid],[data-say],[data-call],#gameDone,#stop,#speechForm button")
+  document.querySelectorAll("[data-device],[data-rfid],[data-walk],[data-say],[data-call],#gameDone,#stop,#speechForm button")
     .forEach((b) => { b.disabled = !twinEnabled; });
 }
 
@@ -351,6 +360,9 @@ document.querySelectorAll("[data-device]").forEach((b) => {
 });
 document.querySelectorAll("[data-rfid]").forEach((b) => {
   b.onclick = () => act(() => api("/api/twin/pi/rfid", { method: "POST", body: JSON.stringify({ tag: b.dataset.rfid }) }));
+});
+document.querySelectorAll("[data-walk]").forEach((b) => {
+  b.onclick = () => act(() => api("/api/twin/pi/walk", { method: "POST", body: JSON.stringify({ result: b.dataset.walk }) }));
 });
 function speak(text) {
   const ask = entries.find((e) => e.peer === "temi" && e.type === "temi.ask");

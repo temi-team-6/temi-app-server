@@ -7,6 +7,7 @@ from ..auth import current_user
 from ..config import settings
 from ..models import Role, User
 from .control import TwinError, twin
+from .devices import WalkKind
 
 
 def staff_with_twin(user: User = Depends(current_user)) -> User:
@@ -36,6 +37,10 @@ class RfidIn(BaseModel):
 
 class CallIn(BaseModel):
     answered: bool
+
+
+class WalkIn(BaseModel):
+    result: WalkKind
 
 
 async def _guard(action: Any) -> dict[str, Any]:
@@ -79,6 +84,11 @@ async def call(body: CallIn) -> dict[str, Any]:
 @router.post("/pi/rfid")
 async def rfid(body: RfidIn) -> dict[str, Any]:
     return await _guard(twin.rfid(body.tag))
+
+
+@router.post("/pi/walk")
+async def walk(body: WalkIn) -> dict[str, Any]:
+    return await _guard(twin.walk(body.result))
 
 
 @router.post("/pi/game")

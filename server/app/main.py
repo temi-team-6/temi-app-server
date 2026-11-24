@@ -21,6 +21,7 @@ from .protocol import Envelope, make
 from .seed import seed_if_empty
 from .twin.api import router as twin_router
 from .twin.monitor import monitor
+from .voice import VOICE_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("temi")
@@ -44,6 +45,9 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(twin_router)
+app.mount("/voice", StaticFiles(directory=VOICE_DIR), name="voice")
+# 예전 주소. temi-robot-app의 '서버 음성' 모드가 /twin/voice/manifest.json을 읽으므로 같은 파일을 계속 제공한다.
+app.mount("/twin/voice", StaticFiles(directory=VOICE_DIR), name="twin-voice")
 app.mount("/twin", StaticFiles(directory=Path(__file__).parent / "static" / "twin", html=True), name="twin")
 
 

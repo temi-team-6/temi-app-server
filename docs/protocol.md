@@ -63,11 +63,21 @@ REST API의 상세 스키마는 서버의 `/docs`(Swagger)가 기준이다. 이 
 
 | type | payload | Temi가 할 일 |
 |---|---|---|
-| `temi.say` | `{text}` | TTS로 말하고 화면에 표시한다. 받은 순서대로 이어서 말하고, 앞 문장을 끊지 않는다. 다 말하면 `temi.say_done`을 보낸다 |
-| `temi.ask` | `{text}` | 질문을 말한다. 대답은 참가자 발화로 온다: 기본은 Pi 마이크(`speech.heard`, Pi가 보냄). Temi 앱의 음성 입력을 'Temi 내장'으로 두면 Temi가 듣고 `reply_to`를 붙여 보낸다. 서버는 `reply_to`가 아니라 지금 단계(통증 확인 중)로 대답을 가른다 |
+| `temi.say` | `{text, audio_url?}` | 말하고 화면에 `text`를 표시한다. `audio_url`이 있으면 그 음성 파일을 재생하고, 없으면 Temi 내장 TTS로 말한다(아래 "Temi 음성"). 받은 순서대로 이어서 말하고, 앞 문장을 끊지 않는다. 다 말하면 `temi.say_done`을 보낸다 |
+| `temi.ask` | `{text, audio_url?}` | 질문을 `temi.say`와 같은 방식으로 말한다. 대답은 참가자 발화로 온다: 기본은 Pi 마이크(`speech.heard`, Pi가 보냄). Temi 앱의 음성 입력을 'Temi 내장'으로 두면 Temi가 듣고 `reply_to`를 붙여 보낸다. 서버는 `reply_to`가 아니라 지금 단계(통증 확인 중)로 대답을 가른다 |
 | `temi.show` | `{screen, ...}` | 화면 전환. `screen`: `idle`, `walk`(`condition`, `attempt`), `game`(`game_id`, `game_type`, `level`). `game_type`이 `stroop`·`memory`면 Temi가 화면 터치로 게임을 진행하고 `game.completed`를 보낸다. `whack`은 안내 화면만 띄운다(진행은 Pi) |
 | `temi.goto` | `{location}` | 저장된 위치로 이동하고 도착하면 `temi.arrived`를 보낸다 |
 | `temi.video_call` | `{staff_id, name}` | 해당 요양사에게 영상통화를 건다. 결과는 `video_call.result`로 보낸다 |
+
+#### Temi 음성
+
+Temi 내장 TTS가 딱딱해서, 고정 대사는 Google Gemini TTS(Leda 목소리, 친근한 말투)로 미리 만든 파일을 쓴다.
+
+- 서버는 미리 만든 문장이면 `audio_url`(예: `/voice/1a2b3c4d5e6f.mp3`)을 붙인다. 서버 주소 뒤에 붙여 받는다(`https://<서버>/voice/...`). 인증은 필요 없다.
+- 전체 목록은 `GET /voice/manifest.json`(`{문장: 파일 이름}`)이다. 출발 신호가 늦어지지 않도록 Temi 앱은 연결할 때 파일을 미리 받아 두는 것을 권장한다.
+- 지금 Temi 앱(`temi-robot-app`)은 설정의 '서버 음성' 모드에서 `GET /twin/voice/manifest.json`으로 목록을 받아 `text`로 파일을 찾는다(`audio_url`은 아직 안 씀). 이 예전 주소도 같은 파일을 계속 제공하므로 Temi 앱을 바꾸지 않아도 Leda 목소리가 나온다. 기본은 'Temi 음성'이라 시연 때는 '서버 음성'으로 바꾼다.
+- 재생이 끝나면 `temi.say_done`을 보낸다(내장 TTS의 완료 콜백과 같은 시점). 받기나 재생에 실패하면 `text`를 내장 TTS로 말하고 똑같이 `temi.say_done`을 보낸다.
+- 새로 등록한 어르신 이름 인사처럼 목록에 없는 문장은 `audio_url` 없이 온다. 파일은 `scripts/gen_temi_voice.py`로 만들고, 대사를 바꾸면 다시 실행해 커밋한다.
 
 `temi.goto`는 형식만 정해 두었다. 에이전트는 아직 보내지 않는다(보행 구간 시범 이동에서 쓸 예정).
 

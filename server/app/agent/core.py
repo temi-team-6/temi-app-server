@@ -32,6 +32,7 @@ from ..models import (
 )
 from ..protocol import make
 from ..schemas import request_out
+from ..voice import with_audio
 
 log = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class AgentCore:
         return self.state
 
     async def _temi(self, type_: str, payload: dict[str, Any]) -> str:
-        msg = make(type_, payload, session_id=self.state.session_id if self.state else None)
+        msg = make(type_, with_audio(type_, payload), session_id=self.state.session_id if self.state else None)
         if type_ in ("temi.say", "temi.ask"):
             self._temi_lines.append((time.monotonic(), payload["text"]))
         await hub.send_device("temi", msg)

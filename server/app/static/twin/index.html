@@ -245,7 +245,7 @@ form.login { max-width: 360px; margin: 15vh auto; display: grid; gap: 10px; }
 const $ = (id) => document.getElementById(id);
 const SLOTS = { "보행_측정": [320, 250], "보행_시작": [70, 90], "보행_끝": [570, 90] };
 const PHASE_SHORT = { approaching: "시작선으로", ready: "출발 대기", walking: "걷는 중", done: "도착", aborted: "측정 취소" };
-let voices = {}, voiceOn = false, voiceQueue = [], voicePlaying = false;
+let voices = {}, voiceOn = false, voiceQueue = [], voicePlaying = false, actionError = "";
 fetch("../voice/manifest.json").then((r) => r.ok ? r.json() : {}).then((m) => { voices = m; });
 // 재생기는 하나만 쓴다. 끝남·오류·재생 실패가 겹쳐 와도 다음 문장은 한 번만 시작해 목소리가 겹치지 않는다.
 const voicePlayer = new Audio();
@@ -345,13 +345,16 @@ function renderScenarios(status) {
     b.onclick = () => act(() => api(`/api/twin/scenarios/${s.id}`, { method: "POST" }));
     li.append(b); list.append(li);
   }
-  $("scenarioError").textContent = status.last_error || "";
-  $("scenarioError").classList.toggle("hidden", !status.last_error);
+  // 버튼이 거절된 이유는 다음 버튼을 누를 때까지 남긴다(상태판 메시지마다 새로 그려도 지워지지 않게).
+  const error = status.last_error || actionError;
+  $("scenarioError").textContent = error;
+  $("scenarioError").classList.toggle("hidden", !error);
 }
 
 async function act(fn) {
+  actionError = "";
   try { renderScenarios(await fn()); }
-  catch (err) { $("scenarioError").textContent = err.message; $("scenarioError").classList.remove("hidden"); }
+  catch (err) { actionError = err.message; $("scenarioError").textContent = err.message; $("scenarioError").classList.remove("hidden"); }
 }
 
 document.querySelectorAll("[data-device]").forEach((b) => {
